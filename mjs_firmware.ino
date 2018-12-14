@@ -19,7 +19,7 @@
 #include <Wire.h>
 #include <SparkFunHTU21D.h>
 #include <SoftwareSerial.h>
-#include <NMEAGPS.h>
+//#include <NMEAGPS.h>
 #include <Adafruit_SleepyDog.h>
 #include <avr/power.h>
 #include <util/atomic.h>
@@ -27,6 +27,15 @@
 #define DEBUG true
 #include "bitstream.h"
 #include "mjs_lmic.h"
+#include "protocol.h"
+
+
+Device<2> dev;
+Variable& temperature_var = dev.addVariable();
+
+// TODO: Humidity, lux, battery voltage
+
+Variable& vcc_var = dev.addVariable();
 
 
 // Firmware version to send. Should be incremented on release (i.e. when
@@ -72,8 +81,8 @@ float const reference_voltage_internal = 1137.0;
 
 // setup GPS module
 uint8_t const GPS_PIN = 8;
-SoftwareSerial gpsSerial(GPS_PIN, GPS_PIN);
-NMEAGPS gps;
+//SoftwareSerial gpsSerial(GPS_PIN, GPS_PIN);
+//NMEAGPS gps;
 
 // Sensor object
 HTU21D htu;
@@ -99,13 +108,15 @@ uint16_t const GPS_UPDATE_RATIO = 24*4;
 
 uint32_t lastUpdateTime = 0;
 uint32_t updatesBeforeGpsUpdate = 0;
-gps_fix gps_data;
+//gps_fix gps_data;
 
-#ifdef WITH_LUX
-uint8_t const LORA_PORT = 12;
-#else
-uint8_t const LORA_PORT = 11;
-#endif
+// 10 = pre-v1 without version number
+// 11 = without lux
+// 12 = with lux
+// 20 = slam
+// 1-9 = transient experiments
+uint8_t const LORA_PORT_CONFIG = 1;
+uint8_t const LORA_PORT_DATA = 2;
 
 void setup() {
   // when in debugging mode start serial connection
@@ -113,6 +124,17 @@ void setup() {
     Serial.begin(9600);
     Serial.println(F("Start"));
   }
+
+  // TODO: Indicate what voltage (e.g. vcc/battery/etc.)
+  vcc_var.setQuantity(Quantity::Voltage);
+  vcc_var.setUnit(Unit::Volt);
+  vcc_var.setSensor(F("divider"));
+
+  temperature_var.setQuantity(Quantity::Temperature);
+  temperature_var.setUnit(Unit::DegreeCelsius);
+  temperature_var.setSensor(Sensor::BME280);
+  //temperature_var.setSensor("custom_something");
+
 
   // setup LoRa transceiver
   mjs_lmic_setup();
@@ -133,7 +155,7 @@ void setup() {
 
   // start communication to sensors
   htu.begin();
-  gpsSerial.begin(9600);
+  //gpsSerial.begin(9600);
 
   if (DEBUG) {
     temperature = htu.readTemperature();
@@ -158,6 +180,34 @@ void setup() {
     }
     Serial.flush();
   }
+
+  // TODO: Eliminate extra buffer (render to LMIC's buffer directly?)
+  // TODO: This buffer is really too big for transmission
+
+  CborStaticOutput out(120);
+  dev.renderConfig(out);
+  const uint8_t *buf = out.getData();
+  const size_t len = out.getSize();
+
+  os_runloop_once();
+
+  // Prepare upstream data transmission at the next possible time.
+  LMIC_setTxData2(LORA_PORT_CONFIG, buf, len, 0);
+  if (DEBUG)
+  {
+    Serial.println(F("Packet queued"));
+    uint8_t *data = buf;
+    for (int i = 0; i < len; i++)
+    {
+      if (data[i] < 0x10)
+        Serial.write('0');
+      Serial.print(data[i], HEX);
+      Serial.print(" ");
+    }
+    Serial.println();
+    Serial.flush();
+  }
+  mjs_lmic_wait_for_txcomplete();
 }
 
 void loop() {
@@ -251,7 +301,7 @@ void doSleep(uint32_t time) {
 }
 
 void dumpData() {
-  if (gps_data.valid.location && gps_data.valid.status && gps_data.status >= gps_fix::STATUS_STD) {
+/*  if (gps_data.valid.location && gps_data.valid.status && gps_data.status >= gps_fix::STATUS_STD) {
     Serial.print(F("lat/lon: "));
     Serial.print(gps_data.latitudeL()/10000000.0, 6);
     Serial.print(F(","));
@@ -259,7 +309,7 @@ void dumpData() {
   } else {
     Serial.println(F("No GPS fix"));
   }
-
+*/
   Serial.print(F("temp="));
   Serial.print(temperature, 1);
   Serial.print(F(", hum="));
@@ -276,6 +326,7 @@ void dumpData() {
 
 void getPosition()
 {
+/*
   memset(&gps_data, 0, sizeof(gps_data));
   gps.statistics.init();
 
@@ -300,17 +351,19 @@ void getPosition()
 
   if (gps.statistics.ok == 0)
     Serial.println(F("No GPS data received, check wiring"));
+*/
 }
 
 void queueData() {
-  uint8_t length = (BATTERY_DIVIDER_RATIO ? 12 : 11);
-#ifdef WITH_LUX
-  length += 2;
-#endif
-  uint8_t data[length];
-  BitStream packet(data, sizeof(data));
+  CborStaticOutput out(100);
+  Packet<2> packet(out);
+  // TODO Unit/encoding conversions?
+  packet.addValue(temperature_var, temperature);
+  packet.addValue(vcc_var, vcc);
 
-  packet.append(FIRMWARE_VERSION, 8);
+  // TODO packet.append(FIRMWARE_VERSION, 8);
+  // TODO GPS
+  /*
   if (gps_data.valid.location && gps_data.valid.status && gps_data.status >= gps_fix::STATUS_STD) {
     // pack geoposition
     int32_t lat24 = int32_t((int64_t)gps_data.latitudeL() * 32768 / 10000000);
@@ -325,22 +378,8 @@ void queueData() {
     packet.append(0, 24);
     packet.append(0, 24);
   }
-
-  // pack temperature and humidity
-  int16_t tmp16 = temperature * 16;
-  packet.append(tmp16, 12);
-
-  int16_t hum16 = humidity * 16;
-  packet.append(hum16, 12);
-
-  // Encoded in units of 10mv, starting at 1V
-  uint8_t vcc8 = (vcc - 1000) / 10;
-  packet.append(vcc8, 8);
-
-#ifdef WITH_LUX
-  packet.append(lux, 16);
-#endif
-
+  */
+/*
   if (BATTERY_DIVIDER_RATIO) {
     analogReference(INTERNAL);
     uint16_t reading = analogRead(A0);
@@ -350,14 +389,18 @@ void queueData() {
     if (batt >= 50)
       packet.append(batt - 50, 8);
   }
+*/
+
+  const uint8_t *buf = out.getData();
+  const size_t len = out.getSize();
 
   // Prepare upstream data transmission at the next possible time.
-  LMIC_setTxData2(LORA_PORT, packet.data(), packet.byte_size(), 0);
+  LMIC_setTxData2(LORA_PORT_DATA, buf, len, 0);
   if (DEBUG)
   {
     Serial.println(F("Packet queued"));
-    uint8_t *data = packet.data();
-    for (int i = 0; i < packet.byte_size(); i++)
+    uint8_t *data = buf;
+    for (int i = 0; i < len; i++)
     {
       if (data[i] < 0x10)
         Serial.write('0');

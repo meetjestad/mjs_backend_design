@@ -28,11 +28,16 @@ const uint32_t TX_TIMEOUT = 60000;
 #include <SPI.h>
 #include <avr/eeprom.h>
 
+/*
 void os_getArtEui (uint8_t* buf) {
   for (byte i = 0; i < EEPROM_APP_EUI_LEN; i++) {
     buf[i] = eeprom_read_byte((uint8_t*)EEPROM_APP_EUI_START + EEPROM_APP_EUI_LEN - 1 - i);
   }
 }
+*/
+
+static const u1_t PROGMEM APPEUI[8]={ 0x3A, 0x03, 0x00, 0xD0, 0x7E, 0xD5, 0xB3, 0x70 };
+void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
 
 void os_getDevEui (uint8_t* buf) {
   for (byte i = 0; i < EEPROM_DEV_EUI_LEN; i++) {
