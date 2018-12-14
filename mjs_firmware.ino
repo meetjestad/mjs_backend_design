@@ -29,6 +29,16 @@
 #define DEBUG true
 #include "bitstream.h"
 #include "mjs_lmic.h"
+#include "protocol.h"
+
+
+Device<3> dev;
+Variable& temperature_var = dev.addVariable();
+Variable& humidity_var = dev.addVariable();
+
+// TODO: lux, battery voltage
+
+Variable& vcc_var = dev.addVariable();
 
 
 // Firmware version to send. Should be incremented on release (i.e. when
@@ -173,7 +183,13 @@ uint32_t lastUpdateTime = 0;
 uint32_t updatesBeforeGpsUpdate = 0;
 gps_fix gps_data;
 
-uint8_t const LORA_PORT = 13;
+// 10 = pre-v1 without version number
+// 11 = without lux
+// 12 = with lux
+// 20 = slam
+// 1-9 = transient experiments
+uint8_t const LORA_PORT_CONFIG = 1;
+uint8_t const LORA_PORT_DATA = 2;
 
 /**
  * Forward declarations for functions. Not strictly needed for Arduino,
@@ -279,6 +295,20 @@ void setup() {
   }
 
   writeLed(0xff0c00); // orange
+
+  // TODO: Indicate what voltage (e.g. vcc/battery/etc.)
+  vcc_var.setQuantity(Quantity::Voltage);
+  vcc_var.setUnit(Unit::Volt);
+  vcc_var.setSensor(F("divider"));
+
+  temperature_var.setQuantity(Quantity::Temperature);
+  temperature_var.setUnit(Unit::DegreeCelsius);
+  temperature_var.setSensor(Sensor::Si7021);
+  //temperature_var.setSensor("custom_something");
+  //
+  humidity_var.setQuantity(Quantity::Humidity);
+  humidity_var.setUnit(Unit::PercentRelativeHumidity);
+  humidity_var.setSensor(Sensor::Si7021);
 
   // setup LoRa transceiver
   mjs_lmic_setup();
@@ -409,6 +439,31 @@ void setup() {
     os_runloop_once();
 
   writeLed(0x000000); // off (will be turned back on for GPS directly)
+
+  // TODO: Eliminate extra buffer (render to LMIC's buffer directly?)
+  // TODO: This buffer is really too big for transmission
+  CborStaticOutput out(120);
+  dev.renderConfig(out);
+  const uint8_t *buf = out.getData();
+  const size_t len = out.getSize();
+
+  // Prepare upstream data transmission at the next possible time.
+  LMIC_setTxData2(LORA_PORT_CONFIG, (uint8_t*)buf, len, 0);
+  if (DEBUG)
+  {
+    Serial.println(F("Config packet queued"));
+    const uint8_t *data = buf;
+    for (size_t i = 0; i < len; i++)
+    {
+      if (data[i] < 0x10)
+        Serial.write('0');
+      Serial.print(data[i], HEX);
+      Serial.print(" ");
+    }
+    Serial.println();
+    Serial.flush();
+  }
+  mjs_lmic_wait_for_txcomplete();
 }
 
 void loop() {
@@ -671,6 +726,7 @@ void appendExtra(BitStream& packet, uint32_t value, size_t max_bits) {
 }
 
 void queueData() {
+/*
   uint8_t length = 12;
   uint8_t flags = 0;
 
@@ -786,14 +842,22 @@ uint8_t extra_bits = 0;
   // Fill any remaining bits in a partial byte with 1's, so they cannot
   // be a valid extra field.
   packet.append(0xFF, packet.free_bits() % 8);
+  */
 
-  // Prepare upstream data transmission at the next possible time.
-  LMIC_setTxData2(LORA_PORT, packet.data(), packet.byte_size(), 0);
+  CborStaticOutput out(100);
+  Packet<3> packet(out);
+  // TODO Unit/encoding conversions?
+  packet.addValue(temperature_var, temperature);
+  packet.addValue(humidity_var, humidity);
+  packet.addValue(vcc_var, vcc);
+  uint8_t *buf = out.getData();
+  const size_t len = out.getSize(); // Prepare upstream data transmission at the next possible time.
+  LMIC_setTxData2(LORA_PORT_DATA, buf, len, 0);
   if (DEBUG)
   {
     Serial.println(F("Packet queued"));
-    uint8_t *data = packet.data();
-    for (int i = 0; i < packet.byte_size(); i++)
+    uint8_t *data = buf;
+    for (size_t i = 0; i < len; i++)
     {
       if (data[i] < 0x10)
         Serial.write('0');

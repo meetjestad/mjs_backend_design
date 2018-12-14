@@ -78,6 +78,7 @@ const uint32_t TX_TIMEOUT = 60000;
   #define OS_INIT_ARG
 #endif
 
+/*
 void os_getArtEui (uint8_t* buf) {
   for (byte i = 0; i < MJS_APP_EUI_LEN; i++) {
     #if defined(EEPROM_APP_EUI_START)
