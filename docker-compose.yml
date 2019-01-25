@@ -37,3 +37,14 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  ttn-kafka-producer:
+    build: ttn-kafka-producer
+    links:
+      - kafka:kafka
+    environment:
+      TTN_APP_ID: meet-je-stad-test
+      KAFKA_BROKER: kafka:29092
+      KAFKA_TOPIC: ttndata.meet-je-stad-test
+    env_file:
+     - secrets.env
