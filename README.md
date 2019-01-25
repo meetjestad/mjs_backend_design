@@ -3,6 +3,8 @@ like:
 
 	TTN_APP_ID=meet-je-stad-test
 	TTN_ACCESS_KEY=ttn-account-v2.xxxxxxxxxxxxxxxxxxxxx
+	ME_CONFIG_BASICAUTH_USERNAME=root
+	ME_CONFIG_BASICAUTH_PASSWORD=some_password
 
 To start stuff:
 
@@ -21,6 +23,9 @@ To view the data in a kafka queue, you can run a commandline consumer inside the
 	docker exec -it mjsbackenddesign_kafka_1 kafka-console-consumer --bootstrap-server localhost:9092 --topic ttndata.meet-je-stad-test
 
 Add `--from-beginning` to see all historical data, rather than just new data as it comes in.
+
+To view data in mongo, you can use the webinterface bound by docker to
+http://localhost:8081
 
 Updating containers
 -------------------

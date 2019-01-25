@@ -40,6 +40,26 @@ services:
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
+  mongo:
+    image: mongo
+    restart: always
+    ports:
+      - 127.0.0.1:27017:27017
+    # No username/password is given, so authentication is disabled
+    #environment:
+    volumes:
+     - mongo-data:/data/db
+
+  mongo-express:
+    image: mongo-express
+    restart: always
+    links:
+      - mongo:mongo
+    ports:
+      - 127.0.0.1:8081:8081
+    env_file:
+      - secrets.env
+
   ttn-kafka-producer:
     build: ttn-kafka-producer
     restart: always
@@ -56,7 +76,12 @@ services:
     restart: always
     links:
       - kafka:kafka
+      - mongo:mongo
     environment:
       KAFKA_BROKER: kafka:29092
+      MONGODB_URL: mongodb://mongo:27017
     env_file:
      - ttn-kafka-decoder/config.env
+
+volumes:
+  mongo-data:
