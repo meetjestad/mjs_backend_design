@@ -46,4 +46,13 @@ services:
       KAFKA_BROKER: kafka:29092
     env_file:
      - secrets.env
-     - ttn-kafka-prodcer/config.env
+     - ttn-kafka-producer/config.env
+
+  ttn-kafka-decoder:
+    build: ttn-kafka-decoder
+    links:
+      - kafka:kafka
+    environment:
+      KAFKA_BROKER: kafka:29092
+    env_file:
+     - ttn-kafka-decoder/config.env

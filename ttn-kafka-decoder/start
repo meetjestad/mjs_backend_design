@@ -1,0 +1,9 @@
+#!/bin/sh
+
+. config.env
+
+export KAFKA_BROKER="localhost:9092"
+export KAFKA_TOPIC_IN
+export KAFKA_TOPIC_OUT
+
+python app.py "$@"
