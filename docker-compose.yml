@@ -43,7 +43,6 @@ services:
     links:
       - kafka:kafka
     environment:
-      TTN_APP_ID: meet-je-stad-test
       KAFKA_BROKER: kafka:29092
       KAFKA_TOPIC: ttndata.meet-je-stad-test
     env_file:

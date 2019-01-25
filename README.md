@@ -1,8 +1,8 @@
-To run, you need a secrets.env with the TTN access key. e.g. something like:
+To run, you need a secrets.env with the TTN access credentials. e.g. something
+like:
 
+	TTN_APP_ID=meet-je-stad-test
 	TTN_ACCESS_KEY=ttn-account-v2.xxxxxxxxxxxxxxxxxxxxx
-
-This key should match the ttn application id in `docker-compose.yml`.
 
 To start stuff:
 
