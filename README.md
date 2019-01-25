@@ -22,6 +22,20 @@ To view the data in a kafka queue, you can run a commandline consumer inside the
 
 Add `--from-beginning` to see all historical data, rather than just new data as it comes in.
 
+Updating containers
+-------------------
+After you made changes to the code, you can rebuild the images and update the
+containers with:
+
+	docker-compose up -d --build
+
+If you just made changes to the docker-compose file or env files, you can omit
+`--build` and docker will recreate (if needed) the running container with the
+most recently build image.
+
+Note that currently the kafka image has no persistent storage set up, so
+recreating the kafka image will remove data from the kafka queues.
+
 Running outside of docker
 -------------------------
 During development, it can be useful to run some scripts outside of docker. To
