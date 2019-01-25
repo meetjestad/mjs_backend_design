@@ -1,6 +1,6 @@
 #!/bin/sh
 
-. config.env
+. ./config.env
 
 export KAFKA_BROKER="localhost:9092"
 export KAFKA_TOPIC_IN
