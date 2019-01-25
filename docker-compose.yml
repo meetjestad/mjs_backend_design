@@ -44,6 +44,6 @@ services:
       - kafka:kafka
     environment:
       KAFKA_BROKER: kafka:29092
-      KAFKA_TOPIC: ttndata.meet-je-stad-test
     env_file:
      - secrets.env
+     - ttn-kafka-prodcer/config.env

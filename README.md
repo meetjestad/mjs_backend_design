@@ -21,3 +21,15 @@ To view the data in a kafka queue, you can run a commandline consumer inside the
 	docker exec -it mjsbackenddesign_kafka_1 kafka-console-consumer --bootstrap-server localhost:9092 --topic ttndata.meet-je-stad-test
 
 Add `--from-beginning` to see all historical data, rather than just new data as it comes in.
+
+Running outside of docker
+-------------------------
+During development, it can be useful to run some scripts outside of docker. To
+do so, a start script is provided that reads the same config as the docker
+version, or has its own config where needed. For example, to run the kafka
+producer change into the `ttn-kafka-producer` directory and run:
+
+	$ pip install -r requirements.txt
+	$ ./start
+
+This first installs the dependencies, and then runs the script. You might need to run pip with `sudo`, with `--user` or create and activate a virtualenv beforehand to make sure you can actually install the dependencies. You can also install the dependencies using OS packages (e.g. using apt) instead.

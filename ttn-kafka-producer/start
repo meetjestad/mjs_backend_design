@@ -1,0 +1,12 @@
+#!/bin/sh
+
+. ../secrets.env
+export TTN_APP_ID
+export TTN_ACCESS_KEY
+
+. ./config.env
+export KAFKA_TOPIC
+
+export KAFKA_BROKER="localhost:9092"
+
+python app.py "$@"
