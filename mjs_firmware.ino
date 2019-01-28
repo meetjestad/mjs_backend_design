@@ -132,7 +132,7 @@ void setup() {
 
   temperature_var.setQuantity(Quantity::Temperature);
   temperature_var.setUnit(Unit::DegreeCelsius);
-  temperature_var.setSensor(Sensor::BME280);
+  temperature_var.setSensor(Sensor::Si7021);
   //temperature_var.setSensor("custom_something");
 
 

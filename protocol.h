@@ -58,7 +58,7 @@ enum class Unit : uint8_t {
 };
 
 enum class Sensor : uint8_t {
-  BME280 = 1,
+  Si7021 = 1,
 };
 
 class Variable {
