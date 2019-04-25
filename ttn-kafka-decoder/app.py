@@ -1,6 +1,7 @@
 import logging
 import os
 
+import pymongo
 import pykafka
 import base64
 import cbor2
@@ -32,50 +33,161 @@ def process_message(message):
     logging.debug('Returning message {}'.format(result))
     return result.encode('utf8')
 
+
 def decode_message(msg, payload):
     port = msg["port"]
     if port == 1:
-        decoded = decode_config_message(payload)
+        return decode_config_message(msg, payload)
     elif port == 2:
-        decoded = decode_data_message(payload)
+        return decode_data_message(msg, payload)
     else:
         logging.warn('Ignoring message with unknown port: {}'.format(port))
         return
 
-    logging.debug("Decoded message: {}".format(decoded))
-
-    # TODO: Should we produce a single stream of (data?) messages? Or split
-    # into measurements already? Should we enrich data with config here, or later?
-    node_id = make_ttn_node_id(msg)
-    msg_id = make_msg_id(node_id, msg)
-
-    return {
-        'id': msg_id,
-        'node_id': node_id,
-        'timestamp': msg['metadata']['time'],
-        'data': decoded,
-        # TODO: Should this be a reference?
-        'original': msg,
-    }
 
 def make_ttn_node_id(msg):
     return 'ttn/{}/{}'.format(msg['app_id'], msg['dev_id'])
 
+
 def make_msg_id(node_id, msg):
     return '{}/{}'.format(node_id, msg['metadata']['time'])
 
-def decode_config_message(payload):
-    #TODO
+def make_meas_id(msg_id, chan_id):
+    return '{}/{}'.format(msg_id, chan_id)
+
+
+def decode_config_message(msg, payload):
+    entries = decode_config_packet(payload)
+    logging.debug("Decoded config entries: {}".format(entries))
+    config = decode_config_entries(entries)
+
+    node_id = make_ttn_node_id(msg)
+    msg_id = make_msg_id(node_id, msg)
+
+    config.update({
+        '_id': msg_id,
+        'node_id': node_id,
+        'timestamp': msg['metadata']['time'],
+        # TODO: Should this be a reference?
+        'sources': {
+            'ttn': msg,
+        }
+    })
+    logging.debug("Decoded config: {}".format(config))
+
+    mongodb.config.update_one({'_id': msg_id}, {'$set': config}, upsert=True)
+
+    return config
+
+
+def decode_config_packet(payload):
     packet = cbor2.loads(payload)
     if not isinstance(packet, list):
         logging.warn("Config packet is not list: {}".format(packet))
+
     def decode(obj):
         return decode_cbor_obj(obj, config_packet_keys, config_packet_values)
     return list(map(decode, packet))
 
-def decode_data_message(payload):
-    #TODO
-    return cbor2.loads(payload)
+
+def decode_config_entries(entries):
+    channels = {}
+    node = {}
+    for entry in entries:
+        data = dict(entry)
+        try:
+            item = data.pop('item_type')
+            if item == 'node':
+                node.update(data)
+            elif item == 'channel':
+                chan_id = data.pop('channel_id')
+                if chan_id in channels:
+                    logging.warn("Duplicate channel entry in config message: {}".format(entry))
+                else:
+                    # Convert id to string, since mongo can only do string keys
+                    channels[str(chan_id)] = data
+            else:
+                logging.warn("Unknown entry type in config message: {}".format(entry))
+        except KeyError as e:
+            logging.warn("Invalid config message entry: {}".format(entry))
+
+    message = {
+        'node_config': node,
+        'channel_config': channels,
+    }
+    return message
+
+
+def decode_data_message(msg, payload):
+    # TODO Decode shortcuts
+    entries = cbor2.loads(payload)
+    logging.debug("Decoded data entries: {}".format(entries))
+    channels = decode_data_entries(entries)
+    logging.debug("Decoded data: {}".format(channels))
+
+    node_id = make_ttn_node_id(msg)
+    msg_id = make_msg_id(node_id, msg)
+    timestamp = msg['metadata']['time']
+
+    config = mongodb.config.find_one(
+        {'node_id': node_id, "timestamp": {"$lt": 'timestamp'}},
+        sort=[("timestamp", pymongo.DESCENDING)]
+    )
+    logging.debug("Found relevant config: {}".format(config))
+
+    data = {
+        '_id': msg_id,
+        'node_id': node_id,
+        'timestamp': timestamp,
+        'config_id': config['_id'] if config else None,
+        'config': config,
+        'channel_data': channels,
+        # TODO: Should this be a reference?
+        'sources': {
+            'ttn': msg,
+        }
+    }
+    logging.debug("Decoded data: {}".format(data))
+
+    mongodb.data.update_one({'_id': msg_id}, {'$set': data}, upsert=True)
+
+    for chan_id, data in channels.items():
+        meas_id = make_meas_id(msg_id, chan_id)
+        chan_data = {
+            '_id': meas_id,
+            'node_id': node_id,
+            'timestamp': msg['metadata']['time'],
+            'config_id': config['_id'] if config else None,
+            'config': config,
+            'channel': chan_id,
+            'data': data,
+            # TODO: Should this be a reference?
+            'sources': {
+                'ttn': msg,
+            }
+        }
+        logging.debug("Decoded single data: {}".format(chan_data))
+        mongodb.data_single.update_one({'_id': meas_id}, {'$set': chan_data}, upsert=True)
+
+    return data
+
+
+def decode_data_entries(entries):
+    channels = {}
+
+    for entry in entries:
+        data = dict(entry)
+        try:
+            chan_id = data.pop('channel_id')
+            if chan_id in channels:
+                logging.warn("Duplicate channel entry in data message: {}".format(entry))
+            else:
+                # Convert id to string, since mongo can only do string keys
+                channels[str(chan_id)] = data
+        except KeyError as e:
+            logging.warn("Invalid config message entry: {}".format(entry))
+
+    return channels
 
 
 # TODO: Write script to convert below values to a reverse mapping usable in the
@@ -145,6 +257,13 @@ logging.info('Connecting Kafka to {}'.format(kafka_broker))
 client = pykafka.KafkaClient(hosts=kafka_broker)
 topic_in = client.topics[kafka_topic_in.encode()]
 topic_out = client.topics[kafka_topic_out.encode()]
+
+mongodb_url = os.environ['MONGODB_URL']
+logging.info('Connecting MongoDB to {}'.format(mongodb_url))
+mongo = pymongo.MongoClient(mongodb_url)
+mongodb = mongo.mjs
+status = mongodb.command("serverStatus")
+logging.info('MongoDB serverStatus: {}'.format(str(status)))
 
 with topic_out.get_sync_producer() as producer:
     consumer = topic_in.get_simple_consumer(
