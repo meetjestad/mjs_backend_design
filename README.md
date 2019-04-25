@@ -1,22 +1,32 @@
-To run, you need a secrets.env with the TTN access credentials. e.g. something
-like:
+To run, you need to create a file called `secrets.env` in this directory
+with the needed credentials. e.g. something like:
 
 	TTN_APP_ID=meet-je-stad-test
 	TTN_ACCESS_KEY=ttn-account-v2.xxxxxxxxxxxxxxxxxxxxx
 	ME_CONFIG_BASICAUTH_USERNAME=root
 	ME_CONFIG_BASICAUTH_PASSWORD=some_password
 
+Here, the TTN credentials should be taken from the TTN console, whereas
+the ME (Mongo Express) credentials will be used to configure ME and can
+be used to login later.
+
 To start stuff:
 
 	docker-compose up -d
 
 This creates a number of related docker containers, whose names are prefixed
-with the name of the current directory. On startup, the kafka clients will likely show some errors in the logs, since kafka needs a few seconds to initialize and start, but they should recover automatically (and silently).
+with the name of the current directory. On startup, the kafka clients
+will likely show some errors in the logs, since kafka needs a few
+seconds to initialize and start, but they should recover automatically
+(and silently).
 
-To view logs, e.g.:
+To view logs, e.g. of the kafka producer (TTN client):
 
 	docker logs -f mjsbackenddesign_ttn-kafka-producer_1
 
+Or of the the kafka decoder (Mongodb writer):
+
+	docker logs -f mjs_backend_design_ttn-kafka-decoder_1
 
 To view the data in a kafka queue, you can run a commandline consumer inside the kafka container:
 
@@ -51,4 +61,8 @@ producer change into the `ttn-kafka-producer` directory and run:
 	$ pip install -r requirements.txt
 	$ ./start
 
-This first installs the dependencies, and then runs the script. You might need to run pip with `sudo`, with `--user` or create and activate a virtualenv beforehand to make sure you can actually install the dependencies. You can also install the dependencies using OS packages (e.g. using apt) instead.
+This first installs the dependencies, and then runs the script. You
+might need to run pip with `sudo`, with `--user` or create and activate
+a virtualenv beforehand to make sure you can actually install the
+dependencies. You can also install the dependencies using OS packages
+(e.g. using apt) instead.
