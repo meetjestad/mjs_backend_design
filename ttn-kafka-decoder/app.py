@@ -240,6 +240,13 @@ def decode_data_entry(chan_data, chan_config):
     data = dict(chan_data)
     config = dict(chan_config)
 
+    # TODO: Should we leave these? Or convert them somehow to preserve
+    # information about granularity?
+    divider = config.pop('divider', 1)
+    offset = config.pop('offset', 0)
+
+    data['value'] = data['value'] / divider + offset
+
     # Add any remaining config keys to the data
     data.update(config)
     return data
