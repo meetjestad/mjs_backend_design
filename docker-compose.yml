@@ -93,6 +93,10 @@ services:
       - 127.0.0.1:9300:9300
     environment:
       discovery.type: single-node
+      # Disable disk space monitoring (which is pointless with a single
+      # node and only ends up making things readonly when a disk is
+      # "almost" full, which is 90% full by default).
+      cluster.routing.allocation.disk.threshold_enabled: "false"
 
   kibana:
     image: docker.elastic.co/kibana/kibana-oss:7.2.0
