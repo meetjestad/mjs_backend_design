@@ -77,11 +77,30 @@ services:
     links:
       - kafka:kafka
       - mongo:mongo
+      - elasticsearch:elasticsearch
     environment:
       KAFKA_BROKER: kafka:29092
       MONGODB_URL: mongodb://mongo:27017
+      ELASTIC_HOST: elasticsearch
     env_file:
      - ttn-kafka-decoder/config.env
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.2.0
+    restart: always
+    ports:
+      - 127.0.0.1:9200:9200
+      - 127.0.0.1:9300:9300
+    environment:
+      discovery.type: single-node
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana-oss:7.2.0
+    restart: always
+    links:
+      - elasticsearch:elasticsearch
+    ports:
+      - 127.0.0.1:5601:5601
 
 volumes:
   mongo-data:
