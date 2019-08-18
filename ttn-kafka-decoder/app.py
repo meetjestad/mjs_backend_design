@@ -252,6 +252,8 @@ CONFIG_PACKET_KEYS = {
     3: 'unit',
     4: 'sensor',
     5: 'item_type',
+    6: 'measured',
+    7: 'divider',
 }
 
 CONFIG_PACKET_VALUES = {
@@ -259,12 +261,19 @@ CONFIG_PACKET_VALUES = {
         1: 'temperature',
         2: 'humidity',
         3: 'voltage',
+        4: 'ambient_light',
+        5: 'latitude',
+        6: 'longitude',
+        7: 'particulate_matter',
     },
     'unit': {
         # TODO: How to note these? Perhaps just '°C'?
         1: 'degree_celcius',
         2: 'percent_rh',
         3: 'volt',
+        4: 'ug_per_cubic_meter',
+        5: 'lux',
+        6: 'degrees',
     },
     'sensor': {
         1: 'Si2701',
