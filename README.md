@@ -48,8 +48,13 @@ If you just made changes to the docker-compose file or env files, you can omit
 `--build` and docker will recreate (if needed) the running container with the
 most recently build image.
 
-Note that currently the kafka image has no persistent storage set up, so
-recreating the kafka image will remove data from the kafka queues.
+To rebuild just one container, add its name, e.g.:
+
+	docker-compose up -d --build ttn-kafka-decoder
+
+Note that currently the kafka and elasticsearch images have no
+persistent storage set up, so recreating the kafka image will remove
+data from the kafka queues.
 
 Running outside of docker
 -------------------------
@@ -66,3 +71,18 @@ might need to run pip with `sudo`, with `--user` or create and activate
 a virtualenv beforehand to make sure you can actually install the
 dependencies. You can also install the dependencies using OS packages
 (e.g. using apt) instead.
+
+Useful commands
+---------------
+To delete all data in elasticsearch (including Kibana configuration, I
+think):
+
+	curl -XDELETE 'localhost:9200/_all'
+
+Setting up Grafana
+------------------
+This happens through the webinterface (maybe also possible through
+docker variables or a bindmounted config file, have not tried). Add an
+elasticsearch backend and set URL to http://elasticsearch:9200, set
+Version to 7.0+ and add an index name (does not seem to be optional).
+Multiple backends seem to be needed for multiple indices.
