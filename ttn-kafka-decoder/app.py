@@ -1,6 +1,7 @@
 import logging
 import os
 
+import elasticsearch
 import pymongo
 import pykafka
 import base64
@@ -76,6 +77,8 @@ def decode_config_message(msg, payload):
     logging.debug("Decoded config: {}".format(config))
 
     mongodb.config.update_one({'_id': msg_id}, {'$set': config}, upsert=True)
+    config.pop('_id') # ES does not allow id inside the data
+    es.index(index="config", id=msg_id, body=config)
 
     return config
 
@@ -150,6 +153,8 @@ def decode_data_message(msg, payload):
     logging.debug("Decoded data: {}".format(data))
 
     mongodb.data.update_one({'_id': msg_id}, {'$set': data}, upsert=True)
+    data.pop('_id') # ES does not allow id inside the data
+    es.index(index="data", id=msg_id, body=data)
 
     for chan_id, data in channels.items():
         meas_id = make_meas_id(msg_id, chan_id)
@@ -168,6 +173,8 @@ def decode_data_message(msg, payload):
         }
         logging.debug("Decoded single data: {}".format(chan_data))
         mongodb.data_single.update_one({'_id': meas_id}, {'$set': chan_data}, upsert=True)
+        chan_data.pop('_id') # ES does not allow id inside the data
+        es.index(index="data_single", id=meas_id, body=chan_data)
 
     return data
 
@@ -264,6 +271,10 @@ mongo = pymongo.MongoClient(mongodb_url)
 mongodb = mongo.mjs
 status = mongodb.command("serverStatus")
 logging.info('MongoDB serverStatus: {}'.format(str(status)))
+
+elastic_host = os.environ['ELASTIC_HOST']
+logging.info('Connecting Elasticsearch to {}'.format(elastic_host))
+es = elasticsearch.Elasticsearch(elastic_host)
 
 with topic_out.get_sync_producer() as producer:
     consumer = topic_in.get_simple_consumer(

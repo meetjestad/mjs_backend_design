@@ -1,3 +1,4 @@
 pykafka
 cbor2
 pymongo
+elasticsearch
