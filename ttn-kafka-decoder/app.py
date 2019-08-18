@@ -71,6 +71,12 @@ def decode_config_message(msg, payload):
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
 
+    # HACK: Elasticsearch breaks if a field is sometimes a timestamp and
+    # sometimes the empty string, so remove empty time fields for now...
+    for gw_data in msg.get('metadata', {}).get('gateways', []):
+        if 'time' in gw_data and not gw_data['time']:
+            gw_data.pop('time')
+
     config.update({
         '_id': msg_id,
         'node_id': node_id,
@@ -144,6 +150,12 @@ def decode_data_message(msg, payload):
 
     channels = decode_data_entries(entries, config)
     logging.debug("Decoded data: %s", channels)
+
+    # HACK: Elasticsearch breaks if a field is sometimes a timestamp and
+    # sometimes the empty string, so remove empty time fields for now...
+    for gw_data in msg.get('metadata', {}).get('gateways', []):
+        if 'time' in gw_data and not gw_data['time']:
+            gw_data.pop('time')
 
     data = {
         '_id': msg_id,
