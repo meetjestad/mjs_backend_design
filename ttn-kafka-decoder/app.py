@@ -1,3 +1,5 @@
+# vim:fileencoding=utf8
+
 import logging
 import os
 
