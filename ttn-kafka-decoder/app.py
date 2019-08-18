@@ -1,14 +1,15 @@
+#!/usr/bin/env python3
 # vim:fileencoding=utf8
-
+# pylint: disable=missing-docstring
 import logging
 import os
+import base64
+import json
 
 import elasticsearch
 import pymongo
 import pykafka
-import base64
 import cbor2
-import json
 
 # TODO: Use the Kafka Streams API? Might be better supported in java?
 # https://github.com/wintoncode/winton-kafka-streams
@@ -18,22 +19,26 @@ import json
 def process_message(message):
     try:
         msg_as_string = message.value.decode('utf8')
-        logging.debug('Received message {}: {}'.format(message.offset, msg_as_string))
+        logging.debug('Received message %s: %s', message.offset, msg_as_string)
         msg_obj = json.loads(msg_as_string)
         payload = base64.b64decode(msg_obj.get('payload_raw', ''))
-    except json.JSONDecodeError as e:
-        logging.warn('Error parsing JSON payload')
-        logging.warn(e)
+    except json.JSONDecodeError as ex:
+        logging.warning('Error parsing JSON payload')
+        logging.warning(ex)
         return None
 
     try:
         decoded = decode_message(msg_obj, payload)
-    except Exception as e:
-        logging.exception('Error processing packet')
+    # pylint: disable=broad-except
+    except Exception as ex:
+        logging.exception('Error processing packet: %s', ex)
+        return None
+
+    if decoded is None:
         return None
 
     result = json.dumps(decoded)
-    logging.debug('Returning message {}'.format(result))
+    logging.debug('Returning message %s', result)
     return result.encode('utf8')
 
 
@@ -41,11 +46,10 @@ def decode_message(msg, payload):
     port = msg["port"]
     if port == 1:
         return decode_config_message(msg, payload)
-    elif port == 2:
+    if port == 2:
         return decode_data_message(msg, payload)
-    else:
-        logging.warn('Ignoring message with unknown port: {}'.format(port))
-        return
+    logging.warning('Ignoring message with unknown port: %s', port)
+    return None
 
 
 def make_ttn_node_id(msg):
@@ -61,7 +65,7 @@ def make_meas_id(msg_id, chan_id):
 
 def decode_config_message(msg, payload):
     entries = decode_config_packet(payload)
-    logging.debug("Decoded config entries: {}".format(entries))
+    logging.debug("Decoded config entries: %s", entries)
     config = decode_config_entries(entries)
 
     node_id = make_ttn_node_id(msg)
@@ -76,7 +80,7 @@ def decode_config_message(msg, payload):
             'ttn': msg,
         }
     })
-    logging.debug("Decoded config: {}".format(config))
+    logging.debug("Decoded config: %s", config)
 
     mongodb.config.update_one({'_id': msg_id}, {'$set': config}, upsert=True)
     config.pop('_id') # ES does not allow id inside the data
@@ -88,10 +92,10 @@ def decode_config_message(msg, payload):
 def decode_config_packet(payload):
     packet = cbor2.loads(payload)
     if not isinstance(packet, list):
-        logging.warn("Config packet is not list: {}".format(packet))
+        logging.warning("Config packet is not list: %s", packet)
 
     def decode(obj):
-        return decode_cbor_obj(obj, config_packet_keys, config_packet_values)
+        return decode_cbor_obj(obj, CONFIG_PACKET_KEYS, CONFIG_PACKET_VALUES)
     return list(map(decode, packet))
 
 
@@ -107,14 +111,14 @@ def decode_config_entries(entries):
             elif item == 'channel':
                 chan_id = data.pop('channel_id')
                 if chan_id in channels:
-                    logging.warn("Duplicate channel entry in config message: {}".format(entry))
+                    logging.warning("Duplicate channel entry in config message: %s", entry)
                 else:
                     # Convert id to string, since mongo can only do string keys
                     channels[str(chan_id)] = data
             else:
-                logging.warn("Unknown entry type in config message: {}".format(entry))
-        except KeyError as e:
-            logging.warn("Invalid config message entry: {}".format(entry))
+                logging.warning("Unknown entry type in config message: %s", entry)
+        except KeyError as ex:
+            logging.warning("Invalid config message entry (missing %s): %s", ex.args, entry)
 
     message = {
         'node_config': node,
@@ -126,9 +130,7 @@ def decode_config_entries(entries):
 def decode_data_message(msg, payload):
     # TODO Decode shortcuts
     entries = cbor2.loads(payload)
-    logging.debug("Decoded data entries: {}".format(entries))
-    channels = decode_data_entries(entries)
-    logging.debug("Decoded data: {}".format(channels))
+    logging.debug("Decoded data entries: %s", entries)
 
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
@@ -138,7 +140,10 @@ def decode_data_message(msg, payload):
         {'node_id': node_id, "timestamp": {"$lt": 'timestamp'}},
         sort=[("timestamp", pymongo.DESCENDING)]
     )
-    logging.debug("Found relevant config: {}".format(config))
+    logging.debug("Found relevant config: %s", config)
+
+    channels = decode_data_entries(entries, config)
+    logging.debug("Decoded data: %s", channels)
 
     data = {
         '_id': msg_id,
@@ -152,7 +157,7 @@ def decode_data_message(msg, payload):
             'ttn': msg,
         }
     }
-    logging.debug("Decoded data: {}".format(data))
+    logging.debug("Decoded data: %s", data)
 
     mongodb.data.update_one({'_id': msg_id}, {'$set': data}, upsert=True)
     data.pop('_id') # ES does not allow id inside the data
@@ -173,7 +178,7 @@ def decode_data_message(msg, payload):
                 'ttn': msg,
             }
         }
-        logging.debug("Decoded single data: {}".format(chan_data))
+        logging.debug("Decoded single data: %s", chan_data)
         mongodb.data_single.update_one({'_id': meas_id}, {'$set': chan_data}, upsert=True)
         chan_data.pop('_id') # ES does not allow id inside the data
         es.index(index="data_single", id=meas_id, body=chan_data)
@@ -189,19 +194,19 @@ def decode_data_entries(entries):
         try:
             chan_id = data.pop('channel_id')
             if chan_id in channels:
-                logging.warn("Duplicate channel entry in data message: {}".format(entry))
+                logging.warning("Duplicate channel %s in data message: %s", chan_id, entry)
             else:
                 # Convert id to string, since mongo can only do string keys
                 channels[str(chan_id)] = data
-        except KeyError as e:
-            logging.warn("Invalid config message entry: {}".format(entry))
+        except KeyError as ex:
+            logging.warning("Invalid config message entry (missing %s): %s", ex.args, entry)
 
     return channels
 
 
 # TODO: Write script to convert below values to a reverse mapping usable in the
 # C++ code.
-config_packet_keys = {
+CONFIG_PACKET_KEYS = {
     1: 'channel_id',
     2: 'quantity',
     3: 'unit',
@@ -209,7 +214,7 @@ config_packet_keys = {
     5: 'item_type',
 }
 
-config_packet_values = {
+CONFIG_PACKET_VALUES = {
     'quantity': {
         1: 'temperature',
         2: 'humidity',
@@ -232,7 +237,7 @@ config_packet_values = {
 
 def decode_cbor_obj(obj, keys, values):
     if not isinstance(obj, dict):
-        logging.warn("Element to decode is not object: {}".format(obj))
+        logging.warning("Element to decode is not object: %s", obj)
         return obj
 
     out = {}
@@ -240,58 +245,64 @@ def decode_cbor_obj(obj, keys, values):
         if isinstance(key, int):
             try:
                 key = keys[key]
-            except KeyError as e:
+            except KeyError:
                 # TODO: Store warnings in output?
-                logging.warn('Unknown integer key in packet: {}={}'.format(key, value))
+                logging.warning('Unknown integer key in packet: %s=%s', key, value)
         if isinstance(value, int):
             values_for_this_key = values.get(key, False)
             if values_for_this_key:
                 try:
                     value = values_for_this_key[value]
-                except KeyError as e:
+                except KeyError:
                     # TODO: Store warnings in output?
-                    logging.warn('Unknown integer value in packet: {}={}'.format(key, value))
+                    logging.warning('Unknown integer value in packet: %s=%s', key, value)
         out[key] = value
     return out
 
 
 
-logging.basicConfig(level=logging.DEBUG)
 
-kafka_broker = os.environ['KAFKA_BROKER']
-kafka_topic_in = os.environ['KAFKA_TOPIC_IN']
-kafka_topic_out = os.environ['KAFKA_TOPIC_OUT']
+def main():
+    global mongodb, es
 
-logging.info('Connecting Kafka to {}'.format(kafka_broker))
-client = pykafka.KafkaClient(hosts=kafka_broker)
-topic_in = client.topics[kafka_topic_in.encode()]
-topic_out = client.topics[kafka_topic_out.encode()]
+    kafka_broker = os.environ['KAFKA_BROKER']
+    kafka_topic_in = os.environ['KAFKA_TOPIC_IN']
+    kafka_topic_out = os.environ['KAFKA_TOPIC_OUT']
 
-mongodb_url = os.environ['MONGODB_URL']
-logging.info('Connecting MongoDB to {}'.format(mongodb_url))
-mongo = pymongo.MongoClient(mongodb_url)
-mongodb = mongo.mjs
-status = mongodb.command("serverStatus")
-logging.info('MongoDB serverStatus: {}'.format(str(status)))
+    logging.info('Connecting Kafka to %s', kafka_broker)
+    client = pykafka.KafkaClient(hosts=kafka_broker)
+    topic_in = client.topics[kafka_topic_in.encode()]
+    topic_out = client.topics[kafka_topic_out.encode()]
 
-elastic_host = os.environ['ELASTIC_HOST']
-logging.info('Connecting Elasticsearch to {}'.format(elastic_host))
-es = elasticsearch.Elasticsearch(elastic_host)
+    mongodb_url = os.environ['MONGODB_URL']
+    logging.info('Connecting MongoDB to %s', mongodb_url)
+    mongo = pymongo.MongoClient(mongodb_url)
+    mongodb = mongo.mjs
+    status = mongodb.command("serverStatus")
+    logging.info('MongoDB serverStatus: %s', str(status))
 
-with topic_out.get_sync_producer() as producer:
-    consumer = topic_in.get_simple_consumer(
+    elastic_host = os.environ['ELASTIC_HOST']
+    logging.info('Connecting Elasticsearch to %s', elastic_host)
+    es = elasticsearch.Elasticsearch(elastic_host)
+
+    logging.basicConfig(level=logging.DEBUG)
+    with topic_out.get_sync_producer() as producer:
+        consumer = topic_in.get_simple_consumer(
             consumer_group='decoder',
             auto_commit_enable=True,
             reset_offset_on_start=False,
             #auto_offset_reset=pykafka.common.OffsetType.EARLIEST,
             #auto_offset_reset=287,
-    )
-    for message in consumer:
-        try:
-            decoded = process_message(message)
-            if decoded is not None:
-                producer.produce(decoded)
-        except Exception as e:
-            logging.exception('Error processing message')
+        )
+        for message in consumer:
+            try:
+                decoded = process_message(message)
+                if decoded is not None:
+                    producer.produce(decoded)
+            # pylint: disable=broad-except
+            except Exception as ex:
+                logging.exception('Error processing message: %s', ex)
+
+main()
 
 # vim: set sw=4 sts=4 expandtab:
