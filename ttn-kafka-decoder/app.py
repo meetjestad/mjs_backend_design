@@ -5,6 +5,7 @@ import logging
 import os
 import base64
 import json
+import itertools
 
 import elasticsearch
 import pymongo
@@ -162,11 +163,11 @@ def decode_data_message(msg, payload):
         'node_id': node_id,
         'timestamp': timestamp,
         'config_id': config['_id'] if config else None,
-        'config': config,
-        'channel_data': channels,
-        # TODO: Should this be a reference?
+        'channels': channels,
+        # TODO: Should these be a reference?
         'sources': {
             'ttn': msg,
+            'config': config,
         }
     }
     logging.debug("Decoded data: %s", data)
@@ -182,12 +183,12 @@ def decode_data_message(msg, payload):
             'node_id': node_id,
             'timestamp': msg['metadata']['time'],
             'config_id': config['_id'] if config else None,
-            'config': config,
-            'channel': chan_id,
+            'channel_id': chan_id,
             'data': data,
-            # TODO: Should this be a reference?
+            # TODO: Should these be a reference?
             'sources': {
                 'ttn': msg,
+                'config': config,
             }
         }
         logging.debug("Decoded single data: %s", chan_data)
@@ -198,23 +199,50 @@ def decode_data_message(msg, payload):
     return data
 
 
-def decode_data_entries(entries):
+def decode_data_entries(entries, config):
     channels = {}
 
     for entry in entries:
-        data = dict(entry)
+        chan_data = dict(entry)
         try:
-            chan_id = data.pop('channel_id')
-            if chan_id in channels:
-                logging.warning("Duplicate channel %s in data message: %s", chan_id, entry)
-            else:
-                # Convert id to string, since mongo can only do string keys
-                channels[str(chan_id)] = data
+            chan_id = chan_data['channel_id']
         except KeyError as ex:
             logging.warning("Invalid config message entry (missing %s): %s", ex.args, entry)
 
+        if chan_id in channels:
+            logging.warning("Duplicate channel %s in data message: %s", chan_id, entry)
+            continue
+
+        try:
+            chan_config = config['channel_config'][str(chan_id)]
+        except KeyError:
+            logging.warning("Missing config for channel %s: %s", chan_id, entry)
+            # Still pass the data along untouched
+            data = chan_data
+        else:
+            data = decode_data_entry(chan_data, chan_config)
+
+        name = data.get('quantity', str(chan_id))
+
+        if name in channels:
+            for num in itertools.count(start=2):
+                new_name = "{}_{}".format(name, num)
+                if new_name not in channels:
+                    name = new_name
+                    break
+
+        channels[name] = data
+
     return channels
 
+def decode_data_entry(chan_data, chan_config):
+    # Make copies we can modify
+    data = dict(chan_data)
+    config = dict(chan_config)
+
+    # Add any remaining config keys to the data
+    data.update(config)
+    return data
 
 # TODO: Write script to convert below values to a reverse mapping usable in the
 # C++ code.
