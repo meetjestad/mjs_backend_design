@@ -315,8 +315,6 @@ def produce_message(msg_obj, payload, port):
     logging.debug("Producing new message: %s", msg_as_string)
     kafka_producer.produce(kafka_topic, msg_as_bytes)
 
-logging.basicConfig(level=logging.DEBUG)
-
 def get_env_or_file(name, default=None):
     try:
         return os.environ[name]
@@ -332,6 +330,8 @@ def get_env_or_file(name, default=None):
 
 def main():
     global kafka_producer, kafka_topic
+
+    logging.basicConfig(level=logging.DEBUG)
 
     kafka_broker = os.environ['KAFKA_BROKER']
     kafka_topic = os.environ['KAFKA_TOPIC']

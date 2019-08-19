@@ -316,10 +316,10 @@ def decode_cbor_obj(obj, keys, values):
     return out
 
 
-
-
 def main():
     global mongodb, es
+
+    logging.basicConfig(level=logging.DEBUG)
 
     kafka_broker = os.environ['KAFKA_BROKER']
     kafka_topic_in = os.environ['KAFKA_TOPIC_IN']
@@ -341,7 +341,6 @@ def main():
     logging.info('Connecting Elasticsearch to %s', elastic_host)
     es = elasticsearch.Elasticsearch(elastic_host)
 
-    logging.basicConfig(level=logging.DEBUG)
     with topic_out.get_sync_producer() as producer:
         consumer = topic_in.get_simple_consumer(
             consumer_group='decoder',
