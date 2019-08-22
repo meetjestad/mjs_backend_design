@@ -2,7 +2,7 @@
 version: '2'
 services:
   redis:
-    image: redis/redis:latest
+    image: redis:latest
     restart: always
     ports:
       - 127.0.0.1:6379:6379

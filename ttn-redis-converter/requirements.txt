@@ -1,4 +1,4 @@
-aioredis
+redis
 paho-mqtt
 cbor2
 bitstring
