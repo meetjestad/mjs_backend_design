@@ -7,6 +7,8 @@ import os
 import json
 import base64
 import traceback
+from urllib.parse import urlparse
+
 import redis
 
 import paho.mqtt.client as mqtt
@@ -322,9 +324,13 @@ def main():
     ca_cert_path = os.environ.get("TTN_CA_CERT_PATH", "mqtt-ca.pem")
     ttn_port = 8883
 
-    redis_host, redis_port = os.environ["REDIS_SERVER"].split(":")
-    logging.info("Connecting Redis to {} on port {}".format(redis_host, redis_port))
-    redis_server = redis.Redis(host=redis_host, port=int(redis_port), db=0)
+    redis_url = urlparse(os.environ["REDIS_URL"])
+    logging.info(
+        "Connecting Redis to {} on port {}".format(redis_url.hostname, redis_url.port)
+    )
+    redis_server = redis.Redis(
+        host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0)
+    )
 
     logging.info("Connecting MQTT to %s on port %s", ttn_host, ttn_port)
     mqtt_client = mqtt.Client()

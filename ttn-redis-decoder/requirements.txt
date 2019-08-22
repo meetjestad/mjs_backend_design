@@ -1,4 +1,5 @@
 redis
 cbor2
-pymongo
 elasticsearch
+pony
+psycopg2_binary

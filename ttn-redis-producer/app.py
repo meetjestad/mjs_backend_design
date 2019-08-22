@@ -6,6 +6,7 @@ import logging
 import os
 import paho.mqtt.client as mqtt
 import redis
+from urllib3.packages.rfc3986 import urlparse
 
 
 def get_env_or_file(name, default=None):
@@ -38,7 +39,6 @@ def main():
 
     logging.basicConfig(level=logging.DEBUG)
 
-    redis_host, redis_port = os.environ["REDIS_SERVER"].split(":")
     redis_stream = os.environ["REDIS_STREAM"]
     app_id = os.environ.get("TTN_APP_ID")
     access_key = get_env_or_file("TTN_ACCESS_KEY")
@@ -46,8 +46,13 @@ def main():
     ca_cert_path = os.environ.get("TTN_CA_CERT_PATH", "mqtt-ca.pem")
     ttn_port = 8883
 
-    logging.info("Connecting Redis to {} on port {}".format(redis_host, redis_port))
-    redis_server = redis.Redis(host=redis_host, port=int(redis_port), db=0)
+    redis_url = urlparse(os.environ["REDIS_URL"])
+    logging.info(
+        "Connecting Redis to {} on port {}".format(redis_url.hostname, redis_url.port)
+    )
+    redis_server = redis.Redis(
+        host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0)
+    )
 
     logging.info("Connecting MQTT to {} on port {}".format(ttn_host, ttn_port))
     mqtt_client = mqtt.Client()

@@ -9,33 +9,13 @@ services:
     volumes:
       - redis-data:/data
 
-  mongo:
-    image: mongo
-    restart: always
-    ports:
-      - 127.0.0.1:27017:27017
-    # No username/password is given, so authentication is disabled
-    #environment:
-    volumes:
-     - mongo-data:/data/db
-
-  mongo-express:
-    image: mongo-express
-    restart: always
-    links:
-      - mongo:mongo
-    ports:
-      - 127.0.0.1:8081:8081
-    env_file:
-      - secrets.env
-
   ttn-redis-producer:
     build: ttn-redis-producer
     restart: always
     links:
       - redis:redis
     environment:
-      REDIS_SERVER: redis:6379
+      REDIS_URL: redis://redis:6379/0
     env_file:
      - secrets.env
      - ttn-redis-producer/config.env
@@ -45,11 +25,9 @@ services:
     restart: always
     links:
       - redis:redis
-      - mongo:mongo
       - elasticsearch:elasticsearch
     environment:
-      REDIS_SERVER: redis:6379
-      MONGODB_URL: mongodb://mongo:27017
+      REDIS_URL: redis://redis:6379/0
       ELASTIC_HOST: elasticsearch
     env_file:
      - ttn-redis-decoder/config.env
@@ -60,7 +38,7 @@ services:
     links:
       - redis:redis
     environment:
-      REDIS_SERVER: redis:6379
+      REDIS_URL: redis://redis:6379/0
     env_file:
      - secrets.env
      - ttn-redis-converter/config.env
@@ -97,5 +75,4 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
 
 volumes:
-  mongo-data:
   redis-data:

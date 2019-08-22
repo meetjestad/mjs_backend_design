@@ -6,11 +6,61 @@ import itertools
 import json
 import logging
 import os
+from datetime import datetime
+from urllib.parse import urlparse
 
 import cbor2
 import elasticsearch
-import pymongo
 import redis
+from pony import orm
+
+database_url = urlparse(os.environ["DATABASE_URL"])
+redis_url = urlparse(os.environ["REDIS_URL"])
+
+db = orm.Database()
+db.bind(
+    provider=database_url.scheme,
+    user=database_url.username,
+    password=database_url.password,
+    host=database_url.hostname,
+    port=database_url.port,
+    database=database_url.path[1:],
+)
+
+
+class Config(db.Entity):
+    message_id = orm.PrimaryKey(str)
+    node_id = orm.Required(str)
+    timestamp = orm.Required(datetime)
+
+    data = orm.Required(orm.Json)
+
+    bundles = orm.Set("Bundle")
+    measurements = orm.Set("Measurement")
+
+
+class Bundle(db.Entity):
+    config = orm.Required(Config)
+    message_id = orm.PrimaryKey(str)
+    node_id = orm.Required(str)
+    timestamp = orm.Required(datetime)
+
+    data = orm.Required(orm.Json)
+
+    measurements = orm.Set("Measurement")
+
+
+class Measurement(db.Entity):
+    bundle = orm.Required(Bundle)
+    config = orm.Required(Config)
+
+    node_id = orm.Required(str)
+    timestamp = orm.Required(datetime)
+
+    data = orm.Required(orm.Json)
+
+
+db.generate_mapping(create_tables=True)
 
 
 def process_message(message_id, message):
@@ -61,10 +111,11 @@ def make_meas_id(msg_id, chan_id):
     return "{}/{}".format(msg_id, chan_id)
 
 
+@orm.db_session
 def decode_config_message(msg, payload):
     entries = decode_config_packet(payload)
     logging.debug("Decoded config entries: %s", entries)
-    config = decode_config_entries(entries)
+    config_entries = decode_config_entries(entries)
 
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
@@ -75,21 +126,24 @@ def decode_config_message(msg, payload):
         if "time" in gw_data and not gw_data["time"]:
             gw_data.pop("time")
 
-    config.update(
-        {
-            "_id": msg_id,
+    config = Config(
+        message_id=msg_id,
+        node_id=node_id,
+        timestamp=msg["metadata"]["time"],
+        data=config_entries,
+    )
+
+    logging.debug("Decoded config: %s", config)
+
+    if es:
+        body = {
             "node_id": node_id,
             "timestamp": msg["metadata"]["time"],
             # TODO: Should this be a reference?
             "sources": {"ttn": msg},
         }
-    )
-    logging.debug("Decoded config: %s", config)
-
-    mongodb.config.update_one({"_id": msg_id}, {"$set": config}, upsert=True)
-    config.pop("_id")  # ES does not allow id inside the data
-    if es:
-        es.index(index="config", id=msg_id, body=config)
+        body.update(config_entries)
+        es.index(index="config", id=msg_id, body=body)
 
     return config
 
@@ -134,6 +188,7 @@ def decode_config_entries(entries):
     return message
 
 
+@orm.db_session
 def decode_data_message(msg, payload):
     # TODO Decode shortcuts
     entries = cbor2.loads(payload)
@@ -143,9 +198,10 @@ def decode_data_message(msg, payload):
     msg_id = make_msg_id(node_id, msg)
     timestamp = msg["metadata"]["time"]
 
-    config = mongodb.config.find_one(
-        {"node_id": node_id, "timestamp": {"$lt": "timestamp"}},
-        sort=[("timestamp", pymongo.DESCENDING)],
+    config = (
+        Config.select(lambda c: c.node_id == node_id)
+        .order_by(orm.desc(Config.timestamp))
+        .first()
     )
     logging.debug("Found relevant config: %s", config)
 
@@ -162,46 +218,54 @@ def decode_data_message(msg, payload):
         if "time" in gw_data and not gw_data["time"]:
             gw_data.pop("time")
 
-    data = {
-        "_id": msg_id,
-        "node_id": node_id,
-        "timestamp": timestamp,
-        "config_id": config["_id"] if config else None,
-        "channels": channels,
-        # TODO: Should these be a reference?
-        "sources": {"ttn": msg, "config": config},
-    }
-    logging.debug("Decoded data: %s", data)
+    bundle = Bundle(
+        config=config,
+        message_id=msg_id,
+        node_id=node_id,
+        timestamp=timestamp,
+        data=channels,
+    )
+    orm.commit()
 
-    mongodb.data.update_one({"_id": msg_id}, {"$set": data}, upsert=True)
-    data.pop("_id")  # ES does not allow id inside the data
+    logging.debug("Decoded data: %s", bundle)
+
     if es:
-        es.index(index="data", id=msg_id, body=data)
+        body = {
+            "node_id": node_id,
+            "timestamp": timestamp,
+            "config_id": config["_id"] if config else None,
+            "channels": channels,
+        }
+        es.index(index="data", id=msg_id, body=body)
 
     for chan_id, data in channels.items():
         meas_id = make_meas_id(msg_id, chan_id)
-        chan_data = {
-            "_id": meas_id,
-            "node_id": node_id,
-            "timestamp": msg["metadata"]["time"],
-            "config_id": config["_id"] if config else None,
-            "channel_id": chan_id,
-            "data": data,
-            # TODO: Should these be a reference?
-            "sources": {"ttn": msg, "config": config},
-        }
-        logging.debug("Decoded single data: %s", chan_data)
-        mongodb.data_single.update_one(
-            {"_id": meas_id}, {"$set": chan_data}, upsert=True
+
+        measurement = Measurement(
+            config=config,
+            bundle=bundle,
+            message_id=msg_id,
+            node_id=node_id,
+            timestamp=timestamp,
+            data=data,
         )
-        chan_data.pop("_id")  # ES does not allow id inside the data
+
+        logging.debug("Decoded single data: %s", measurement)
+
         if es:
-            es.index(index="data_single", id=meas_id, body=chan_data)
+            body = {
+                "node_id": node_id,
+                "timestamp": msg["metadata"]["time"],
+                "config_id": config["_id"] if config else None,
+                "channel_id": chan_id,
+                "data": data,
+            }
+            es.index(index="data_single", id=meas_id, body=body)
 
-    return data
+    return bundle
 
 
-def decode_data_entries(entries, config):
+def decode_data_entries(entries, config: Config):
     channels = {}
 
     for entry in entries:
@@ -220,7 +284,7 @@ def decode_data_entries(entries, config):
                 continue
 
             try:
-                chan_config = config["channel_config"][str(chan_id)]
+                chan_config = config.data["channel_config"][str(chan_id)]
             except KeyError:
                 logging.warning("Missing config for channel %s: %s", chan_id, entry)
                 # Still pass the data along untouched
@@ -323,23 +387,18 @@ def decode_cbor_obj(obj, keys, values):
 
 
 def main():
-    global mongodb, es
+    global es
 
     logging.basicConfig(level=logging.DEBUG)
 
-    redis_stream_in = os.environ["REDIS_STREAM_IN"]
-    redis_stream_out = os.environ["REDIS_STREAM_OUT"]
+    redis_stream = os.environ["REDIS_STREAM"]
 
-    redis_host, redis_port = os.environ["REDIS_SERVER"].split(":")
-    logging.info("Connecting Redis to {} on port {}".format(redis_host, redis_port))
-    redis_server = redis.Redis(host=redis_host, port=int(redis_port), db=0)
-
-    mongodb_url = os.environ["MONGODB_URL"]
-    logging.info("Connecting MongoDB to %s", mongodb_url)
-    mongo = pymongo.MongoClient(mongodb_url)
-    mongodb = mongo.mjs
-    status = mongodb.command("serverStatus")
-    logging.info("MongoDB serverStatus: %s", str(status))
+    logging.info(
+        "Connecting Redis to {} on port {}".format(redis_url.hostname, redis_url.port)
+    )
+    redis_server = redis.Redis(
+        host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0)
+    )
 
     elastic_host = os.environ["ELASTIC_HOST"]
     if elastic_host:
@@ -350,17 +409,11 @@ def main():
 
     while True:
         for stream_name, messages in redis_server.xread(
-            {redis_stream_in: "$"}, block=10 * 60 * 1000
+            {redis_stream: "$"}, block=60 * 1000
         ):
             for stream_id, message in messages:
                 try:
-                    print(message)
-                    decoded = process_message(
-                        stream_id.decode("utf-8"), message[b"payload"]
-                    )
-                    if decoded is not None:
-                        redis_server.xadd(redis_stream_out, {"payload": decoded})
-                    pass
+                    process_message(stream_id.decode("utf-8"), message[b"payload"])
                 # pylint: disable=broad-except
                 except Exception as ex:
                     logging.exception("Error processing message: %s", ex)
