@@ -254,10 +254,10 @@ def process_data(msg_obj, payload):
 
         config = list(map(encode, config))
         logging.debug("Generated config payload (after shortening): %s", config)
-        produce_message(msg_obj, config, CONFIG_PORT)
+        yield produce_message(msg_obj, config, CONFIG_PORT)
 
     logging.debug("Generated data payload: %s", data)
-    return produce_message(msg_obj, data, DATA_PORT)
+    yield produce_message(msg_obj, data, DATA_PORT)
 
 
 def produce_message(msg_obj, payload, port):
@@ -305,15 +305,15 @@ def main():
             return
 
         try:
-            message_bytes = process_data(msg_obj, payload)
+            for message_bytes in process_data(msg_obj, payload):
+                logging.debug("Producing new message: %s", message_bytes)
+                redis_server.xadd(redis_stream, {"payload": message_bytes})
+
         # pylint: disable=broad-except
         except Exception as ex:
             logging.warning("Error processing packet")
             logging.warning(ex)
             traceback.print_tb(ex.__traceback__)
-        else:
-            logging.debug("Producing new message: %s", message_bytes)
-            redis_server.xadd(redis_stream, {"payload": message_bytes})
 
     logging.basicConfig(level=logging.DEBUG)
 
