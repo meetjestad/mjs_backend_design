@@ -49,9 +49,11 @@ services:
     links:
       - redis:redis
       - elasticsearch:elasticsearch
+      - timescale:timescale
     environment:
       REDIS_URL: redis://redis:6379/0
       ELASTIC_HOST: elasticsearch
+      DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
     env_file:
      - ttn-redis-decoder/config.env
 
