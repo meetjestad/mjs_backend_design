@@ -148,6 +148,10 @@ def decode_data_message(msg, payload):
     )
     logging.debug("Found relevant config: %s", config)
 
+    if not config:
+        logging.warning("Found no relevant config, returning")
+        return
+
     channels = decode_data_entries(entries, config)
     logging.debug("Decoded data: %s", channels)
 
