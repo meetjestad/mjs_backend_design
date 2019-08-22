@@ -1,10 +1,10 @@
 #!/bin/sh
 
 . ./config.env
-export KAFKA_TOPIC_IN
-export KAFKA_TOPIC_OUT
+export REDIS_STREAM_IN
+export REDIS_STREAM_OUT
 
-export KAFKA_BROKER="localhost:9092"
+export REDIS_SERVER="localhost:6379"
 export MONGODB_URL="mongodb://localhost:27017"
 
 python app.py "$@"

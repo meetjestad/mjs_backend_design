@@ -15,22 +15,22 @@ To start stuff:
 	docker-compose up -d
 
 This creates a number of related docker containers, whose names are prefixed
-with the name of the current directory. On startup, the kafka clients
-will likely show some errors in the logs, since kafka needs a few
+with the name of the current directory. On startup, the redis clients
+will likely show some errors in the logs, since redis needs a few
 seconds to initialize and start, but they should recover automatically
 (and silently).
 
-To view logs, e.g. of the kafka producer (TTN client):
+To view logs, e.g. of the redis producer (TTN client):
 
-	docker logs -f mjsbackenddesign_ttn-kafka-producer_1
+	docker logs -f mjsbackenddesign_ttn-redis-producer_1
 
-Or of the the kafka decoder (Mongodb writer):
+Or of the the redis decoder (Mongodb writer):
 
-	docker logs -f mjs_backend_design_ttn-kafka-decoder_1
+	docker logs -f mjs_backend_design_ttn-redis-decoder_1
 
-To view the data in a kafka queue, you can run a commandline consumer inside the kafka container:
+To view the data in a redis queue, you can run a commandline consumer inside the redis container:
 
-	docker exec -it mjsbackenddesign_kafka_1 kafka-console-consumer --bootstrap-server localhost:9092 --topic ttndata.meet-je-stad-test
+	docker exec -it mjsbackenddesign_redis_1 redis-console-consumer --bootstrap-server localhost:6379 --topic ttndata.meet-je-stad-test
 
 Add `--from-beginning` to see all historical data, rather than just new data as it comes in.
 
@@ -50,18 +50,18 @@ most recently build image.
 
 To rebuild just one container, add its name, e.g.:
 
-	docker-compose up -d --build ttn-kafka-decoder
+	docker-compose up -d --build ttn-redis-decoder
 
-Note that currently the kafka and elasticsearch images have no
-persistent storage set up, so recreating the kafka image will remove
-data from the kafka queues.
+Note that currently the redis and elasticsearch images have no
+persistent storage set up, so recreating the redis image will remove
+data from the redis queues.
 
 Running outside of docker
 -------------------------
 During development, it can be useful to run some scripts outside of docker. To
 do so, a start script is provided that reads the same config as the docker
-version, or has its own config where needed. For example, to run the kafka
-producer change into the `ttn-kafka-producer` directory and run:
+version, or has its own config where needed. For example, to run the redis
+producer change into the `ttn-redis-producer` directory and run:
 
 	$ pip install -r requirements.txt
 	$ ./start

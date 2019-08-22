@@ -1,4 +1,4 @@
-pykafka
+redis
 cbor2
 pymongo
 elasticsearch

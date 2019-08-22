@@ -5,8 +5,8 @@ export TTN_CONVERT_APP_ID
 export TTN_CONVERT_ACCESS_KEY
 
 . ./config.env
-export KAFKA_TOPIC
+export REDIS_STREAM
 
-export KAFKA_BROKER="localhost:9092"
+export REDIS_SERVER="localhost:6379"
 
 python app.py "$@"

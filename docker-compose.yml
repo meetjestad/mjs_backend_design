@@ -1,44 +1,13 @@
 ---
 version: '2'
 services:
-  zookeeper:
-    image: confluentinc/cp-zookeeper:latest
+  redis:
+    image: redis/redis:latest
     restart: always
-    environment:
-      ZOOKEEPER_CLIENT_PORT: 2181
-      ZOOKEEPER_TICK_TIME: 2000
-
-  kafka:
-    # "`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-
-    # An important note about accessing Kafka from clients on other machines: 
-    # -----------------------------------------------------------------------
-    #
-    # The config used here exposes port 9092 for _external_ connections to the broker
-    # i.e. those from _outside_ the docker network. This could be from the host machine
-    # running docker, or maybe further afield if you've got a more complicated setup. 
-    # If the latter is true, you will need to change the value 'localhost' in 
-    # KAFKA_ADVERTISED_LISTENERS to one that is resolvable to the docker host from those 
-    # remote clients
-    #
-    # For connections _internal_ to the docker network, such as from other services
-    # and components, use kafka:29092.
-    #
-    # See https://rmoff.net/2018/08/02/kafka-listeners-explained/ for details
-    # "`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-'"`-._,-
-    #
-    image: confluentinc/cp-kafka:latest
-    restart: always
-    depends_on:
-      - zookeeper
     ports:
-      - 127.0.0.1:9092:9092
-    environment:
-      KAFKA_BROKER_ID: 1
-      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
-      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      - 127.0.0.1:6379:6379
+    volumes:
+      - redis-data:/data
 
   mongo:
     image: mongo
@@ -60,41 +29,41 @@ services:
     env_file:
       - secrets.env
 
-  ttn-kafka-producer:
-    build: ttn-kafka-producer
+  ttn-redis-producer:
+    build: ttn-redis-producer
     restart: always
     links:
-      - kafka:kafka
+      - redis:redis
     environment:
-      KAFKA_BROKER: kafka:29092
+      REDIS_SERVER: redis:6379
     env_file:
      - secrets.env
-     - ttn-kafka-producer/config.env
+     - ttn-redis-producer/config.env
 
-  ttn-kafka-decoder:
-    build: ttn-kafka-decoder
+  ttn-redis-decoder:
+    build: ttn-redis-decoder
     restart: always
     links:
-      - kafka:kafka
+      - redis:redis
       - mongo:mongo
       - elasticsearch:elasticsearch
     environment:
-      KAFKA_BROKER: kafka:29092
+      REDIS_SERVER: redis:6379
       MONGODB_URL: mongodb://mongo:27017
       ELASTIC_HOST: elasticsearch
     env_file:
-     - ttn-kafka-decoder/config.env
+     - ttn-redis-decoder/config.env
 
-  ttn-kafka-converter:
-    build: ttn-kafka-converter
+  ttn-redis-converter:
+    build: ttn-redis-converter
     restart: always
     links:
-      - kafka:kafka
+      - redis:redis
     environment:
-      KAFKA_BROKER: kafka:29092
+      REDIS_SERVER: redis:6379
     env_file:
      - secrets.env
-     - ttn-kafka-converter/config.env
+     - ttn-redis-converter/config.env
 
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.2.0
@@ -129,3 +98,4 @@ services:
 
 volumes:
   mongo-data:
+  redis-data:
