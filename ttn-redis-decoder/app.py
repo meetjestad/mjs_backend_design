@@ -403,11 +403,13 @@ def main():
     else:
         es = None
 
+    from_stream_id = "$"
     while True:
         for stream_name, messages in redis_server.xread(
-            {redis_stream: "$"}, block=60 * 1000
+            {redis_stream: from_stream_id}, block=60 * 1000
         ):
             for stream_id, message in messages:
+                from_stream_id = stream_id.decode("utf-8")
                 try:
                     process_message(stream_id.decode("utf-8"), message[b"payload"])
                 # pylint: disable=broad-except
