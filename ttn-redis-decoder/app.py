@@ -88,7 +88,8 @@ def decode_config_message(msg, payload):
 
     mongodb.config.update_one({"_id": msg_id}, {"$set": config}, upsert=True)
     config.pop("_id")  # ES does not allow id inside the data
-    es.index(index="config", id=msg_id, body=config)
+    if es:
+        es.index(index="config", id=msg_id, body=config)
 
     return config
 
@@ -174,7 +175,8 @@ def decode_data_message(msg, payload):
 
     mongodb.data.update_one({"_id": msg_id}, {"$set": data}, upsert=True)
     data.pop("_id")  # ES does not allow id inside the data
-    es.index(index="data", id=msg_id, body=data)
+    if es:
+        es.index(index="data", id=msg_id, body=data)
 
     for chan_id, data in channels.items():
         meas_id = make_meas_id(msg_id, chan_id)
@@ -193,7 +195,8 @@ def decode_data_message(msg, payload):
             {"_id": meas_id}, {"$set": chan_data}, upsert=True
         )
         chan_data.pop("_id")  # ES does not allow id inside the data
-        es.index(index="data_single", id=meas_id, body=chan_data)
+        if es:
+            es.index(index="data_single", id=meas_id, body=chan_data)
 
     return data
 
@@ -339,8 +342,11 @@ def main():
     logging.info("MongoDB serverStatus: %s", str(status))
 
     elastic_host = os.environ["ELASTIC_HOST"]
-    logging.info("Connecting Elasticsearch to %s", elastic_host)
-    es = elasticsearch.Elasticsearch(elastic_host)
+    if elastic_host:
+        logging.info("Connecting Elasticsearch to %s", elastic_host)
+        es = elasticsearch.Elasticsearch(elastic_host)
+    else:
+        es = None
 
     while True:
         for stream_name, messages in redis_server.xread(
