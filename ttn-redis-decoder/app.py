@@ -85,10 +85,6 @@ def process_message(message_id, message):
     if decoded is None:
         return None
 
-    result = json.dumps(decoded)
-    logging.debug("Returning message %s", result)
-    return result.encode("utf8")
-
 
 def decode_message(msg, payload):
     port = msg["port"]
