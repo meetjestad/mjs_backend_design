@@ -13,10 +13,10 @@ import pymongo
 import redis
 
 
-def process_message(message):
+def process_message(message_id, message):
     try:
-        msg_as_string = message.value.decode("utf8")
-        logging.debug("Received message %s: %s", message.offset, msg_as_string)
+        msg_as_string = message.decode("utf8")
+        logging.debug("Received message %s: %s", message_id, msg_as_string)
         msg_obj = json.loads(msg_as_string)
         payload = base64.b64decode(msg_obj.get("payload_raw", ""))
     except json.JSONDecodeError as ex:
@@ -207,7 +207,9 @@ def decode_data_entries(entries, config):
             )
         else:
             if chan_id in channels:
-                logging.warning("Duplicate channel %s in data message: %s", chan_id, entry)
+                logging.warning(
+                    "Duplicate channel %s in data message: %s", chan_id, entry
+                )
                 continue
 
             try:
@@ -336,14 +338,22 @@ def main():
     logging.info("Connecting Elasticsearch to %s", elastic_host)
     es = elasticsearch.Elasticsearch(elastic_host)
 
-    for message in redis_server.xread([redis_stream_in], block=True):
-        try:
-            decoded = process_message(message)
-            if decoded is not None:
-                redis_server.xadd(redis_stream_out, {"payload": decoded})
-        # pylint: disable=broad-except
-        except Exception as ex:
-            logging.exception("Error processing message: %s", ex)
+    while True:
+        for stream_name, messages in redis_server.xread(
+            {redis_stream_in: "$"}, block=10 * 60 * 1000
+        ):
+            for stream_id, message in messages:
+                try:
+                    print(message)
+                    decoded = process_message(
+                        stream_id.decode("utf-8"), message[b"payload"]
+                    )
+                    if decoded is not None:
+                        redis_server.xadd(redis_stream_out, {"payload": decoded})
+                    pass
+                # pylint: disable=broad-except
+                except Exception as ex:
+                    logging.exception("Error processing message: %s", ex)
 
 
 main()
