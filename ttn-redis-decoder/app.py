@@ -129,7 +129,7 @@ def decode_config_message(msg, payload):
     config = Config(
         message_id=msg_id,
         node_id=node_id,
-        timestamp=msg["metadata"]["time"],
+        timestamp=datetime.fromisoformat(msg["metadata"]["time"]),
         data=config_entries,
     )
 
@@ -222,7 +222,7 @@ def decode_data_message(msg, payload):
         config=config,
         message_id=msg_id,
         node_id=node_id,
-        timestamp=timestamp,
+        timestamp=datetime.fromisoformat(timestamp),
         data=channels,
     )
     orm.commit()
@@ -246,7 +246,7 @@ def decode_data_message(msg, payload):
             bundle=bundle,
             message_id=msg_id,
             node_id=node_id,
-            timestamp=timestamp,
+            timestamp=datetime.fromisoformat(timestamp),
             data=data,
         )
 
