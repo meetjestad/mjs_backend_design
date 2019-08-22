@@ -3,3 +3,4 @@ cbor2
 elasticsearch
 pony
 psycopg2_binary
+iso8601

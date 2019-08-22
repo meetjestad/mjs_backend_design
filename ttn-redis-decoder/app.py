@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 import cbor2
 import elasticsearch
 import redis
+from iso8601 import parse_date
 from pony import orm
 
 database_url = urlparse(os.environ["DATABASE_URL"])
@@ -129,7 +130,7 @@ def decode_config_message(msg, payload):
     config = Config(
         message_id=msg_id,
         node_id=node_id,
-        timestamp=datetime.fromisoformat(msg["metadata"]["time"]),
+        timestamp=parse_date(msg["metadata"]["time"]),
         data=config_entries,
     )
 
@@ -222,7 +223,7 @@ def decode_data_message(msg, payload):
         config=config,
         message_id=msg_id,
         node_id=node_id,
-        timestamp=datetime.fromisoformat(timestamp),
+        timestamp=parse_date(timestamp),
         data=channels,
     )
     orm.commit()
@@ -246,7 +247,7 @@ def decode_data_message(msg, payload):
             bundle=bundle,
             message_id=msg_id,
             node_id=node_id,
-            timestamp=datetime.fromisoformat(timestamp),
+            timestamp=parse_date(timestamp),
             data=data,
         )
 
