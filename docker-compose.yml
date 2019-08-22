@@ -9,6 +9,29 @@ services:
     volumes:
       - redis-data:/data
 
+  timescale:
+    image: timescale/timescaledb:latest-pg11
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: password
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+
+  hasura:
+    image: hasura/graphql-engine:v1.0.0-beta.4
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      - timescale
+    restart: always
+    links:
+      - timescale:timescale
+    env_file:
+      - secrets.env
+    environment:
+      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+
   ttn-redis-producer:
     build: ttn-redis-producer
     restart: always
@@ -76,3 +99,4 @@ services:
 
 volumes:
   redis-data:
+  timescale-data:
