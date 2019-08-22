@@ -241,7 +241,6 @@ def decode_data_message(msg, payload):
         measurement = Measurement(
             config=config,
             bundle=bundle,
-            message_id=msg_id,
             node_id=node_id,
             timestamp=parse_date(timestamp),
             data=data,
