@@ -42,7 +42,7 @@ CONFIG_PACKET_VALUES = {
     },
     "unit": {
         # TODO: How to note these? Perhaps just '°C'?
-        1: "degree_celcius",
+        1: "degrees_celcius",
         2: "percent_rh",
         3: "volt",
         4: "ug_per_cubic_meter",
@@ -109,14 +109,14 @@ def process_data(msg_obj, payload):
             "item_type": "channel",
             "channel_id": 1,
             "quantity": "longitude",
-            "unit": "degree",
+            "unit": "degrees",
             "divider": 32768,
         },
         {
             "item_type": "channel",
             "channel_id": 2,
             "quantity": "temperature",
-            "unit": "degree_celsius",
+            "unit": "degrees_celsius",
             "divider": 16,
         },
         {
