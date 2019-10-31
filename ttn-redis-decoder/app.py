@@ -14,6 +14,7 @@ import elasticsearch
 import redis
 from iso8601 import parse_date
 from pony import orm
+from pony.orm import desc, max
 
 database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
@@ -34,6 +35,8 @@ class Config(db.Entity):
     node_id = orm.Required(str)
     timestamp = orm.Required(datetime)
 
+    entry_id = orm.Required(str)  # Redis entry id
+
     data = orm.Required(orm.Json)
 
     bundles = orm.Set("Bundle")
@@ -45,6 +48,8 @@ class Bundle(db.Entity):
     message_id = orm.PrimaryKey(str)
     node_id = orm.Required(str)
     timestamp = orm.Required(datetime)
+
+    entry_id = orm.Required(str)  # Redis entry id
 
     data = orm.Required(orm.Json)
 
@@ -64,10 +69,10 @@ class Measurement(db.Entity):
 db.generate_mapping(create_tables=True)
 
 
-def process_message(message_id, message):
+def process_message(entry_id, message):
     try:
         msg_as_string = message.decode("utf8")
-        logging.debug("Received message %s: %s", message_id, msg_as_string)
+        logging.debug("Received message %s: %s", entry_id, msg_as_string)
         msg_obj = json.loads(msg_as_string)
         payload = base64.b64decode(msg_obj.get("payload_raw", ""))
     except json.JSONDecodeError as ex:
@@ -76,7 +81,7 @@ def process_message(message_id, message):
         return None
 
     try:
-        decoded = decode_message(msg_obj, payload)
+        decoded = decode_message(entry_id, msg_obj, payload)
     # pylint: disable=broad-except
     except Exception as ex:
         logging.exception("Error processing packet: %s", ex)
@@ -86,12 +91,12 @@ def process_message(message_id, message):
         return None
 
 
-def decode_message(msg, payload):
+def decode_message(entry_id, msg, payload):
     port = msg["port"]
     if port == 1:
-        return decode_config_message(msg, payload)
+        return decode_config_message(entry_id, msg, payload)
     if port == 2:
-        return decode_data_message(msg, payload)
+        return decode_data_message(entry_id, msg, payload)
     logging.warning("Ignoring message with unknown port: %s", port)
     return None
 
@@ -109,7 +114,7 @@ def make_meas_id(msg_id, chan_id):
 
 
 @orm.db_session
-def decode_config_message(msg, payload):
+def decode_config_message(entry_id, msg, payload):
     entries = decode_config_packet(payload)
     logging.debug("Decoded config entries: %s", entries)
     config_entries = decode_config_entries(entries)
@@ -126,6 +131,7 @@ def decode_config_message(msg, payload):
     config = Config(
         message_id=msg_id,
         node_id=node_id,
+        entry_id=entry_id,
         timestamp=parse_date(msg["metadata"]["time"]),
         data=config_entries,
     )
@@ -186,7 +192,7 @@ def decode_config_entries(entries):
 
 
 @orm.db_session
-def decode_data_message(msg, payload):
+def decode_data_message(entry_id, msg, payload):
     # TODO Decode shortcuts
     entries = cbor2.loads(payload)
     logging.debug("Decoded data entries: %s", entries)
@@ -197,8 +203,8 @@ def decode_data_message(msg, payload):
 
     config = (
         Config.select(lambda c: c.node_id == node_id)
-        .order_by(orm.desc(Config.timestamp))
-        .first()
+            .order_by(orm.desc(Config.timestamp))
+            .first()
     )
     logging.debug("Found relevant config: %s", config)
 
@@ -219,6 +225,7 @@ def decode_data_message(msg, payload):
         config=config,
         message_id=msg_id,
         node_id=node_id,
+        entry_id=entry_id,
         timestamp=parse_date(timestamp),
         data=channels,
     )
@@ -382,6 +389,11 @@ def decode_cbor_obj(obj, keys, values):
     return out
 
 
+@orm.db_session
+def get_last_entry_id():
+    return max(b.entry_id for b in Bundle) or "$"
+
+
 def main():
     global es
 
@@ -403,15 +415,15 @@ def main():
     else:
         es = None
 
-    from_stream_id = "$"
+    from_entry_id = get_last_entry_id()
     while True:
         for stream_name, messages in redis_server.xread(
-            {redis_stream: from_stream_id}, block=60 * 1000
+                {redis_stream: from_entry_id}, block=60 * 1000
         ):
-            for stream_id, message in messages:
-                from_stream_id = stream_id.decode("utf-8")
+            for entry_id, message in messages:
+                from_entry_id = entry_id.decode("utf-8")
                 try:
-                    process_message(stream_id.decode("utf-8"), message[b"payload"])
+                    process_message(entry_id.decode("utf-8"), message[b"payload"])
                 # pylint: disable=broad-except
                 except Exception as ex:
                     logging.exception("Error processing message: %s", ex)

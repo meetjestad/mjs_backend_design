@@ -4,9 +4,10 @@
 
 import logging
 import os
+from urllib.parse import urlparse
+
 import paho.mqtt.client as mqtt
 import redis
-from urllib3.packages.rfc3986 import urlparse
 
 
 def get_env_or_file(name, default=None):

@@ -4,6 +4,6 @@
 
 export REDIS_URL="redis://localhost:6379/0"
 export REDIS_STREAM
-export DATABSE_URL="postgresql://localhost/mjs"
+export DATABASE_URL="postgresql://localhost/mjs"
 
 python app.py "$@"
