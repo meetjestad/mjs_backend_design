@@ -1,0 +1,6 @@
+#import "./fragments/bundle.graphql"
+query ($limit: Int){
+  bundle(order_by: {timestamp: desc}, limit: $limit) {
+    ...BundleFields
+  }
+}

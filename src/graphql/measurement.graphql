@@ -1,0 +1,6 @@
+#import "./fragments/measurement.graphql"
+query ($limit: Int!){
+  measurement(order_by: {timestamp: desc}, limit: $limit) {
+    ...MeasurementFields
+  }
+}

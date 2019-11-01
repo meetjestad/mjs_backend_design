@@ -1,0 +1,6 @@
+fragment MeasurementFields on measurement {
+    id
+    node_id
+    data
+    timestamp
+}

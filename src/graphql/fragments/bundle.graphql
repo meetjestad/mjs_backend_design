@@ -1,0 +1,6 @@
+fragment BundleFields on bundle {
+    message_id
+    node_id
+    data
+    timestamp
+}
