@@ -237,7 +237,7 @@ def process_data(msg_obj, payload):
     try:
         last_counter = last_counter_seen[node_id]
         # If the node was rebooted, simulate a new config
-        if last_counter < msg_counter:
+        if last_counter > msg_counter:
             generate_config = True
     except KeyError:
         generate_config = True
