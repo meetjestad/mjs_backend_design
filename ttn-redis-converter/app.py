@@ -2,6 +2,7 @@
 # vim:fileencoding=utf8
 # pylint: disable=missing-docstring
 
+from datetime import datetime, timezone
 import logging
 import os
 import json
@@ -307,7 +308,10 @@ def main():
         try:
             for message_bytes in process_data(msg_obj, payload):
                 logging.debug("Producing new message: %s", message_bytes)
-                redis_server.xadd(redis_stream, {"payload": message_bytes})
+                redis_server.xadd(redis_stream, {
+                    "payload": message_bytes,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                })
 
         # pylint: disable=broad-except
         except Exception as ex:

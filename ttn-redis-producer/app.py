@@ -2,6 +2,7 @@
 # vim:fileencoding=utf8
 # pylint: disable=missing-docstring
 
+from datetime import datetime, timezone
 import logging
 import os
 from urllib.parse import urlparse
@@ -33,7 +34,10 @@ def main():
         logging.debug("Received message %s", str(msg.payload))
 
         try:
-            redis_server.xadd(redis_stream, {"payload": msg.payload})
+            redis_server.xadd(redis_stream, {
+                "payload": msg.payload,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            })
         except Exception as e:
             logging.error("Inserting into Redis failed")
             logging.error(e)
