@@ -1,0 +1,21 @@
+server {
+    listen       80;
+
+    location / {
+        root   /data/htdocs;
+        index  index.html index.htm;
+    }
+
+    # redirect server error pages to the static page /50x.html
+    error_page   500 502 503 504  /50x.html;
+    location = /50x.html {
+        root   /usr/share/nginx/html;
+    }
+
+    location /api/ {
+        # This adds a /, to make sure that the url contains a path, so /api is replaced by / in the request to the API
+        proxy_pass   ${API_PROXY_URL}/;
+    }
+}
+
+# vim: set sw=4 sts=4 et:

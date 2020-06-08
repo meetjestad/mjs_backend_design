@@ -1,6 +1,18 @@
 ---
 version: '2'
 services:
+  web:
+    image: nginx
+    volumes:
+      - ./nginx-config:/etc/nginx/templates
+      - ./htdocs:/data/htdocs
+    ports:
+      - 127.0.0.1:8080:80
+    environment:
+      - API_PROXY_URL=http://hasura:8080
+    links:
+      - hasura:hasura
+
   redis:
     image: redis:latest
     restart: always
@@ -19,8 +31,8 @@ services:
 
   hasura:
     image: hasura/graphql-engine:latest
-    ports:
-      - 127.0.0.1:8080:8080
+    expose:
+      - 8080
     depends_on:
       - timescale
     restart: always
