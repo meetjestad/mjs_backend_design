@@ -14,6 +14,8 @@ server {
 
     location /api/ {
         # This adds a /, to make sure that the url contains a path, so /api is replaced by / in the request to the API
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_pass   ${API_PROXY_URL}/;
     }
 }
