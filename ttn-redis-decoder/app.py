@@ -29,11 +29,14 @@ db.bind(
     database=database_url.path[1:],
 )
 
+# Below, datetime types specify the sql_type explicitly, to ensure timezone
+# information is stored along with the timestamps. See also
+# https://github.com/ponyorm/pony/issues/434
 
 class Config(db.Entity):
     message_id = orm.PrimaryKey(str)
     node_id = orm.Required(str)
-    timestamp = orm.Required(datetime)
+    timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
 
     entry_id = orm.Required(str)  # Redis entry id
 
@@ -47,7 +50,7 @@ class Bundle(db.Entity):
     config = orm.Required(Config)
     message_id = orm.PrimaryKey(str)
     node_id = orm.Required(str)
-    timestamp = orm.Required(datetime)
+    timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
 
     entry_id = orm.Required(str)  # Redis entry id
 
@@ -61,7 +64,7 @@ class Measurement(db.Entity):
     config = orm.Required(Config)
 
     node_id = orm.Required(str)
-    timestamp = orm.Required(datetime)
+    timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
 
     data = orm.Required(orm.Json)
 
