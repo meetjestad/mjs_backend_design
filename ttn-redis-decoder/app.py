@@ -60,6 +60,7 @@ class Bundle(db.Entity):
 
 
 class Measurement(db.Entity):
+    meas_id = orm.PrimaryKey(str)
     bundle = orm.Required(Bundle)
     config = orm.Required(Config)
 
@@ -249,6 +250,7 @@ def decode_data_message(entry_id, msg, payload):
         meas_id = make_meas_id(msg_id, chan_id)
 
         measurement = Measurement(
+            meas_id=meas_id,
             config=config,
             bundle=bundle,
             node_id=node_id,
