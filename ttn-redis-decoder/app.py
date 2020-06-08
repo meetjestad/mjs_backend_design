@@ -33,13 +33,27 @@ db.bind(
 # information is stored along with the timestamps. See also
 # https://github.com/ponyorm/pony/issues/434
 
+class RawMessage(db.Entity):
+    # Single id primary key to make it easier to refer to these messages
+    id = orm.PrimaryKey(int, auto=True)
+
+    # Source type and source-specific id to allow correlating with upstream messages, if any
+    src = orm.Required(str)
+    src_id = orm.Optional(str)
+
+    received_from_src = orm.Optional(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
+    raw = orm.Optional(bytes)
+    decoded = orm.Optional(orm.Json)
+
+    configs = orm.Set("Config")
+    bundles = orm.Set("Bundle")
+
 class Config(db.Entity):
     message_id = orm.PrimaryKey(str)
     node_id = orm.Required(str)
     timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
 
-    entry_id = orm.Required(str)  # Redis entry id
-
+    src = orm.Required(RawMessage)
     data = orm.Required(orm.Json)
 
     bundles = orm.Set("Bundle")
@@ -52,8 +66,7 @@ class Bundle(db.Entity):
     node_id = orm.Required(str)
     timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
 
-    entry_id = orm.Required(str)  # Redis entry id
-
+    src = orm.Required(RawMessage)
     data = orm.Required(orm.Json)
 
     measurements = orm.Set("Measurement")
@@ -72,35 +85,61 @@ class Measurement(db.Entity):
 
 db.generate_mapping(create_tables=True)
 
+def delete_if_exists(entity, **kwargs):
+    # This runs a DELETE query without creating an instance. This bypasses the
+    # cache, which could be problematic if the instance would already have been
+    # loaded into the cache, but in practice there were actually problems with
+    # calling delete() on an instance not deleting it from the cache (so a
+    # subsequent insert would fail).
+    num = entity.select().where(**kwargs).delete(bulk=True)
+    if num:
+        logging.info("Deleted previous %s %s", entity.__name__, kwargs)
 
+@orm.db_session
 def process_message(entry_id, message):
+    payload = message[b'payload']
+    timestamp = parse_date(message[b'timestamp'].decode('utf8'))
+
+    # First thing, secure the message in the rawest form
+    delete_if_exists(RawMessage, src="ttn", src_id=entry_id)
+    raw_msg = RawMessage(
+        src = "ttn",
+        # TTN does not assign ids, so use the id assigned by redis then
+        src_id = entry_id,
+        received_from_src = timestamp,
+        raw = payload,
+    )
+    orm.commit()
+
+    # Then, actually decode the message
     try:
-        msg_as_string = message.decode("utf8")
+        msg_as_string = payload.decode("utf8")
         logging.debug("Received message %s: %s", entry_id, msg_as_string)
         msg_obj = json.loads(msg_as_string)
         payload = base64.b64decode(msg_obj.get("payload_raw", ""))
     except json.JSONDecodeError as ex:
         logging.warning("Error parsing JSON payload")
         logging.warning(ex)
-        return None
+        return
+
+    # Store the "decoded" JSON version, which is a bit more readable for debugging
+    raw_msg.decoded = msg_obj
+    orm.commit()
 
     try:
-        decoded = decode_message(entry_id, msg_obj, payload)
+        decode_message(raw_msg, msg_obj, payload)
     # pylint: disable=broad-except
     except Exception as ex:
         logging.exception("Error processing packet: %s", ex)
-        return None
-
-    if decoded is None:
-        return None
+        return
 
 
-def decode_message(entry_id, msg, payload):
+def decode_message(raw_msg, msg, payload):
     port = msg["port"]
     if port == 1:
-        return decode_config_message(entry_id, msg, payload)
+        return decode_config_message(raw_msg, msg, payload)
     if port == 2:
-        return decode_data_message(entry_id, msg, payload)
+        return decode_data_message(raw_msg, msg, payload)
     logging.warning("Ignoring message with unknown port: %s", port)
     return None
 
@@ -117,8 +156,7 @@ def make_meas_id(msg_id, chan_id):
     return "{}/{}".format(msg_id, chan_id)
 
 
-@orm.db_session
-def decode_config_message(entry_id, msg, payload):
+def decode_config_message(raw_msg, msg, payload):
     entries = decode_config_packet(payload)
     logging.debug("Decoded config entries: %s", entries)
     config_entries = decode_config_entries(entries)
@@ -132,12 +170,13 @@ def decode_config_message(entry_id, msg, payload):
         if "time" in gw_data and not gw_data["time"]:
             gw_data.pop("time")
 
+    delete_if_exists(Config, message_id=msg_id)
     config = Config(
         message_id=msg_id,
         node_id=node_id,
-        entry_id=entry_id,
         timestamp=parse_date(msg["metadata"]["time"]),
         data=config_entries,
+        src=raw_msg,
     )
 
     logging.debug("Decoded config: %s", config)
@@ -195,18 +234,18 @@ def decode_config_entries(entries):
     return message
 
 
-@orm.db_session
-def decode_data_message(entry_id, msg, payload):
+def decode_data_message(raw_msg, msg, payload):
     # TODO Decode shortcuts
     entries = cbor2.loads(payload)
     logging.debug("Decoded data entries: %s", entries)
 
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
-    timestamp = msg["metadata"]["time"]
+    timestamp = parse_date(msg["metadata"]["time"])
 
     config = (
         Config.select(lambda c: c.node_id == node_id)
+            .where(lambda c: c.timestamp <= timestamp)
             .order_by(orm.desc(Config.timestamp))
             .first()
     )
@@ -225,13 +264,14 @@ def decode_data_message(entry_id, msg, payload):
         if "time" in gw_data and not gw_data["time"]:
             gw_data.pop("time")
 
+    delete_if_exists(Bundle, message_id=msg_id)
     bundle = Bundle(
         config=config,
         message_id=msg_id,
         node_id=node_id,
-        entry_id=entry_id,
-        timestamp=parse_date(timestamp),
+        timestamp=timestamp,
         data=channels,
+        src=raw_msg,
     )
     orm.commit()
 
@@ -240,7 +280,7 @@ def decode_data_message(entry_id, msg, payload):
     if es:
         body = {
             "node_id": node_id,
-            "timestamp": timestamp,
+            "timestamp": msg["metadata"]["time"],
             "config_id": config["_id"] if config else None,
             "channels": channels,
         }
@@ -249,12 +289,13 @@ def decode_data_message(entry_id, msg, payload):
     for chan_id, data in channels.items():
         meas_id = make_meas_id(msg_id, chan_id)
 
+        delete_if_exists(Measurement, meas_id=meas_id)
         measurement = Measurement(
             meas_id=meas_id,
             config=config,
             bundle=bundle,
             node_id=node_id,
-            timestamp=parse_date(timestamp),
+            timestamp=timestamp,
             data=data,
         )
 
@@ -394,11 +435,6 @@ def decode_cbor_obj(obj, keys, values):
     return out
 
 
-@orm.db_session
-def get_last_entry_id():
-    return max(b.entry_id for b in Bundle) or "$"
-
-
 def main():
     global es
 
@@ -420,15 +456,17 @@ def main():
     else:
         es = None
 
-    from_entry_id = get_last_entry_id()
+    messages_from = "0"
     while True:
         for stream_name, messages in redis_server.xread(
-                {redis_stream: from_entry_id}, block=60 * 1000
+                {redis_stream: messages_from}, block=60 * 1000
         ):
             for entry_id, message in messages:
                 from_entry_id = entry_id.decode("utf-8")
                 try:
-                    process_message(entry_id.decode("utf-8"), message[b"payload"])
+                    process_message(entry_id.decode("utf-8"), message)
+                    # When successful, remove from the stream
+                    redis_server.xdel(stream_name, entry_id)
                 # pylint: disable=broad-except
                 except Exception as ex:
                     logging.exception("Error processing message: %s", ex)
