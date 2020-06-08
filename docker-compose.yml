@@ -43,6 +43,7 @@ services:
     environment:
       HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
       HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "default"
 
   ttn-redis-producer:
     build: ttn-redis-producer
