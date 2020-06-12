@@ -397,9 +397,8 @@ CONFIG_PACKET_VALUES = {
         2: "humidity",
         3: "voltage",
         4: "ambient_light",
-        5: "latitude",
-        6: "longitude",
-        7: "particulate_matter",
+        5: "particulate_matter",
+        6: "position",
     },
     "unit": {
         # TODO: How to note these? Perhaps just '°C'?

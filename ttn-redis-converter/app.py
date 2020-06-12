@@ -37,9 +37,8 @@ CONFIG_PACKET_VALUES = {
         2: "humidity",
         3: "voltage",
         4: "ambient_light",
-        5: "latitude",
-        6: "longitude",
-        7: "particulate_matter",
+        5: "particulate_matter",
+        6: "position",
     },
     "unit": {
         # TODO: How to note these? Perhaps just '°C'?
@@ -102,27 +101,20 @@ def process_data(msg_obj, payload):
         {
             "item_type": "channel",
             "channel_id": 0,
-            "quantity": "latitude",
+            "quantity": "position",
             "unit": "degrees",
             "divider": 32768,
         },
         {
             "item_type": "channel",
             "channel_id": 1,
-            "quantity": "longitude",
-            "unit": "degrees",
-            "divider": 32768,
-        },
-        {
-            "item_type": "channel",
-            "channel_id": 2,
             "quantity": "temperature",
             "unit": "degrees_celsius",
             "divider": 16,
         },
         {
             "item_type": "channel",
-            "channel_id": 3,
+            "channel_id": 2,
             "quantity": "humidity",
             "unit": "percent_rh",
             "divider": 16,
@@ -130,7 +122,7 @@ def process_data(msg_obj, payload):
     ]
     vcc_config = {
         "item_type": "channel",
-        "channel_id": 4,
+        "channel_id": 3,
         "quantity": "voltage",
         "unit": "volt",
         "measured": "supply",
@@ -139,7 +131,7 @@ def process_data(msg_obj, payload):
     }
     battery_config = {
         "item_type": "channel",
-        "channel_id": 5,
+        "channel_id": 4,
         "quantity": "voltage",
         "unit": "volt",
         "measured": "battery",
@@ -148,20 +140,20 @@ def process_data(msg_obj, payload):
     }
     lux_config = {
         "item_type": "channel",
-        "channel_id": 6,
+        "channel_id": 5,
         "quantity": "ambient_light",
         "unit": "lux",
     }
     pm25_config = {
         "item_type": "channel",
-        "channel_id": 7,
+        "channel_id": 6,
         "quantity": "particulate_matter",
         "unit": "ug_per_cubic_meter",
         "measured:size": 2.5,
     }
     pm10_config = {
         "item_type": "channel",
-        "channel_id": 8,
+        "channel_id": 7,
         "quantity": "particulate_matter",
         "unit": "ug_per_cubic_meter",
         "measured:size": 10,
@@ -201,35 +193,32 @@ def process_data(msg_obj, payload):
     if port != 10:
         node_config["firmware_version"] = stream.read("uint:8")
 
-    # Latitude
-    data.append({"channel_id": 0, "value": stream.read("int:24")})
-
-    # Longitude
-    data.append({"channel_id": 1, "value": stream.read("int:24")})
+    # Position
+    data.append({"channel_id": 0, "value": [stream.read("int:24"), stream.read("int:24")]})
 
     # Temperature
-    data.append({"channel_id": 2, "value": stream.read("int:12")})
+    data.append({"channel_id": 1, "value": stream.read("int:12")})
 
     # Humidity
-    data.append({"channel_id": 3, "value": stream.read("int:12")})
+    data.append({"channel_id": 2, "value": stream.read("int:12")})
 
     if port >= 11 or len(stream) - stream.bitpos >= 8:
         config.append(vcc_config)
-        data.append({"channel_id": 4, "value": stream.read("uint:8")})
+        data.append({"channel_id": 3, "value": stream.read("uint:8")})
 
     if port == 12:
         config.append(lux_config)
-        data.append({"channel_id": 6, "value": stream.read("uint:16")})
+        data.append({"channel_id": 5, "value": stream.read("uint:16")})
 
     if len(stream) - stream.bitpos >= 32:
         config.append(pm25_config)
-        data.append({"channel_id": 7, "value": stream.read("uint:16")})
+        data.append({"channel_id": 6, "value": stream.read("uint:16")})
         config.append(pm10_config)
-        data.append({"channel_id": 8, "value": stream.read("uint:16")})
+        data.append({"channel_id": 7, "value": stream.read("uint:16")})
 
     if len(stream) - stream.bitpos >= 8:
         config.append(battery_config)
-        data.append({"channel_id": 5, "value": stream.read("uint:8")})
+        data.append({"channel_id": 4, "value": stream.read("uint:8")})
 
     node_id = make_ttn_node_id(msg_obj)
     msg_counter = msg_obj["counter"]
