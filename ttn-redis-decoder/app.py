@@ -366,7 +366,13 @@ def decode_data_entry(chan_data, chan_config):
     divider = config.pop("divider", 1)
     offset = config.pop("offset", 0)
 
-    data["value"] = data["value"] / divider + offset
+    def decode(value):
+        return value / divider + offset
+
+    if isinstance(data["value"], list):
+        data["value"] = [decode(v) for v in data["value"]]
+    else:
+        data["value"] = decode(data["value"])
 
     # Add any remaining config keys to the data
     data.update(config)
