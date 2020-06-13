@@ -286,7 +286,8 @@ def decode_data_message(raw_msg, msg, payload):
         }
         es.index(index="data", id=msg_id, body=body)
 
-    for chan_id, data in channels.items():
+    for name, data in channels.items():
+        chan_id = data["channel_id"]
         meas_id = make_meas_id(msg_id, chan_id)
 
         delete_if_exists(Measurement, meas_id=meas_id)
