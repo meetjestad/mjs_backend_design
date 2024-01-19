@@ -71,18 +71,3 @@ might need to run pip with `sudo`, with `--user` or create and activate
 a virtualenv beforehand to make sure you can actually install the
 dependencies. You can also install the dependencies using OS packages
 (e.g. using apt) instead.
-
-Useful commands
----------------
-To delete all data in elasticsearch (including Kibana configuration, I
-think):
-
-	curl -XDELETE 'localhost:9200/_all'
-
-Setting up Grafana
-------------------
-This happens through the webinterface (maybe also possible through
-docker variables or a bindmounted config file, have not tried). Add an
-elasticsearch backend and set URL to http://elasticsearch:9200, set
-Version to 7.0+ and add an index name (does not seem to be optional).
-Multiple backends seem to be needed for multiple indices.

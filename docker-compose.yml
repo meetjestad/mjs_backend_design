@@ -8,10 +8,6 @@ services:
       - ./htdocs:/data/htdocs
     ports:
       - 127.0.0.1:8080:80
-    environment:
-      - API_PROXY_URL=http://hasura:8080
-    links:
-      - hasura:hasura
 
   redis:
     image: redis:latest
@@ -29,22 +25,6 @@ services:
     volumes:
       - timescale-data:/var/lib/postgresql/data
 
-  hasura:
-    image: hasura/graphql-engine:latest
-    expose:
-      - 8080
-    depends_on:
-      - timescale
-    restart: always
-    links:
-      - timescale:timescale
-    env_file:
-      - secrets.env
-    environment:
-      HASURA_GRAPHQL_DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
-      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
-      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: "default"
-
   ttn-redis-producer:
     build: ttn-redis-producer
     restart: always
@@ -61,11 +41,9 @@ services:
     restart: always
     links:
       - redis:redis
-      - elasticsearch:elasticsearch
       - timescale:timescale
     environment:
       REDIS_URL: redis://redis:6379/0
-      ELASTIC_HOST: elasticsearch
       DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
     env_file:
      - ttn-redis-decoder/config.env
@@ -80,37 +58,6 @@ services:
     env_file:
      - secrets.env
      - ttn-redis-converter/config.env
-
-  elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch-oss:7.2.0
-    restart: always
-    ports:
-      - 127.0.0.1:9200:9200
-      - 127.0.0.1:9300:9300
-    environment:
-      discovery.type: single-node
-      # Disable disk space monitoring (which is pointless with a single
-      # node and only ends up making things readonly when a disk is
-      # "almost" full, which is 90% full by default).
-      cluster.routing.allocation.disk.threshold_enabled: "false"
-
-  kibana:
-    image: docker.elastic.co/kibana/kibana-oss:7.2.0
-    restart: always
-    links:
-      - elasticsearch:elasticsearch
-    ports:
-      - 127.0.0.1:5601:5601
-
-  grafana:
-    image: grafana/grafana
-    restart: always
-    links:
-      - elasticsearch:elasticsearch
-    ports:
-      - 127.0.0.1:3000:3000
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
 
 volumes:
   redis-data:
