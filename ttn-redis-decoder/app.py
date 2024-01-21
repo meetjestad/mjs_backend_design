@@ -6,7 +6,6 @@ import itertools
 import json
 import logging
 import os
-from datetime import datetime
 from urllib.parse import urlparse
 
 import cbor2
@@ -14,77 +13,12 @@ import redis
 from iso8601 import parse_date
 from pony import orm
 
+import db
+
 database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
 
-db = orm.Database()
-db.bind(
-    provider=database_url.scheme,
-    user=database_url.username,
-    password=database_url.password,
-    host=database_url.hostname,
-    port=database_url.port,
-    database=database_url.path[1:],
-)
-
-# Below, datetime types specify the sql_type explicitly, to ensure timezone
-# information is stored along with the timestamps. See also
-# https://github.com/ponyorm/pony/issues/434
-
-
-class RawMessage(db.Entity):
-    # Single id primary key to make it easier to refer to these messages
-    id = orm.PrimaryKey(int, auto=True)
-
-    # Source type and source-specific id to allow correlating with upstream messages, if any
-    src = orm.Required(str)
-    src_id = orm.Optional(str)
-
-    received_from_src = orm.Optional(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
-    raw = orm.Optional(bytes)
-    decoded = orm.Optional(orm.Json)
-
-    configs = orm.Set("Config")
-    bundles = orm.Set("Bundle")
-
-
-class Config(db.Entity):
-    message_id = orm.PrimaryKey(str)
-    node_id = orm.Required(str)
-    timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
-
-    src = orm.Required(RawMessage)
-    data = orm.Required(orm.Json)
-
-    bundles = orm.Set("Bundle")
-    measurements = orm.Set("Measurement")
-
-
-class Bundle(db.Entity):
-    config = orm.Required(Config)
-    message_id = orm.PrimaryKey(str)
-    node_id = orm.Required(str)
-    timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
-
-    src = orm.Required(RawMessage)
-    data = orm.Required(orm.Json)
-
-    measurements = orm.Set("Measurement")
-
-
-class Measurement(db.Entity):
-    meas_id = orm.PrimaryKey(str)
-    bundle = orm.Required(Bundle)
-    config = orm.Required(Config)
-
-    node_id = orm.Required(str)
-    channel_id = orm.Required(int)
-    timestamp = orm.Required(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
-
-    data = orm.Required(orm.Json)
-
-
-db.generate_mapping(create_tables=True)
+db.init(database_url)
 
 
 def delete_if_exists(entity, **kwargs):
@@ -104,8 +38,8 @@ def process_message(entry_id, message):
     timestamp = parse_date(message[b'timestamp'].decode('utf8'))
 
     # First thing, secure the message in the rawest form
-    delete_if_exists(RawMessage, src="ttn", src_id=entry_id)
-    raw_msg = RawMessage(
+    delete_if_exists(db.RawMessage, src="ttn", src_id=entry_id)
+    raw_msg = db.RawMessage(
         src="ttn",
         # TTN does not assign ids, so use the id assigned by redis then
         src_id=entry_id,
@@ -169,8 +103,8 @@ def decode_config_message(raw_msg, msg, payload):
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
 
-    delete_if_exists(Config, message_id=msg_id)
-    config = Config(
+    delete_if_exists(db.Config, message_id=msg_id)
+    config = db.Config(
         message_id=msg_id,
         node_id=node_id,
         timestamp=parse_date(msg["received_at"]),
@@ -233,9 +167,9 @@ def decode_data_message(raw_msg, msg, payload):
     timestamp = parse_date(msg["received_at"])
 
     config = (
-        Config.select(lambda c: c.node_id == node_id)
+        db.Config.select(lambda c: c.node_id == node_id)
         .where(lambda c: c.timestamp <= timestamp)
-        .order_by(orm.desc(Config.timestamp))
+        .order_by(orm.desc(db.Config.timestamp))
         .first()
     )
     logging.debug("Found relevant config: %s", config)
@@ -247,8 +181,8 @@ def decode_data_message(raw_msg, msg, payload):
     channels = decode_data_entries(entries, config)
     logging.debug("Decoded data: %s", channels)
 
-    delete_if_exists(Bundle, message_id=msg_id)
-    bundle = Bundle(
+    delete_if_exists(db.Bundle, message_id=msg_id)
+    bundle = db.Bundle(
         config=config,
         message_id=msg_id,
         node_id=node_id,
@@ -264,8 +198,8 @@ def decode_data_message(raw_msg, msg, payload):
         chan_id = data["channel_id"]
         meas_id = make_meas_id(msg_id, chan_id)
 
-        delete_if_exists(Measurement, meas_id=meas_id)
-        measurement = Measurement(
+        delete_if_exists(db.Measurement, meas_id=meas_id)
+        measurement = db.Measurement(
             meas_id=meas_id,
             config=config,
             bundle=bundle,
@@ -280,7 +214,7 @@ def decode_data_message(raw_msg, msg, payload):
     return bundle
 
 
-def decode_data_entries(entries, config: Config):
+def decode_data_entries(entries, config: db.Config):
     channels = {}
 
     for entry in entries:
