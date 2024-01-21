@@ -366,7 +366,7 @@ def main():
                 {redis_stream: messages_from}, block=60 * 1000
         ):
             for entry_id, message in messages:
-                from_entry_id = entry_id.decode("utf-8")
+                messages_from = entry_id.decode("utf-8")
                 try:
                     process_message(entry_id.decode("utf-8"), message)
                     # When successful, remove from the stream
