@@ -8,6 +8,10 @@ services:
       - ./htdocs:/data/htdocs
     ports:
       - 127.0.0.1:8080:80
+    environment:
+      - SENSORHUB_URL=https://osh:443/
+    links:
+      - osh:osh
 
   redis:
     image: redis:latest
@@ -42,9 +46,12 @@ services:
     links:
       - redis:redis
       - timescale:timescale
+      - web:web
     environment:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
+      # TODO: Use external DNS name if we have it later?
+      CONSYS_URL: http://web/sensorhub/consys
     env_file:
      - ttn-redis-decoder/config.env
 
@@ -59,6 +66,23 @@ services:
      - secrets.env
      - ttn-redis-converter/config.env
 
+  osh:
+    # This refers to a locally built image
+    image: osh-node-dev-template_osh:latest
+    volumes:
+      - osh-data:/opt/opensensorhub/data
+      - ./osh-log:/opt/opensensorhub/data/log
+
+  # Additional setup:
+  # http://localhost:8080/sensorhub/admin
+  #  - Move Sensorweb service to /sensorweb
+  #  - Create Consys service on /consys, select existing database,
+  #    disable authentication
+  #  - Update Network -> HTTP Server -> Proxy Base URL to
+  #    http://localhost:8080/
+  #  - docker-compose exec osh chown osh: /opt/opensensorhub/data/log
+
 volumes:
   redis-data:
   timescale-data:
+  osh-data:
