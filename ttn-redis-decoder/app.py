@@ -119,7 +119,7 @@ def process_message(entry_id, message):
         msg_as_string = payload.decode("utf8")
         logging.debug("Received message %s: %s", entry_id, msg_as_string)
         msg_obj = json.loads(msg_as_string)
-        payload = base64.b64decode(msg_obj.get("payload_raw", ""))
+        payload = base64.b64decode(msg_obj.get('uplink_message').get('frm_payload', ''))
     except json.JSONDecodeError as ex:
         logging.warning("Error parsing JSON payload")
         logging.warning(ex)
@@ -138,7 +138,7 @@ def process_message(entry_id, message):
 
 
 def decode_message(raw_msg, msg, payload):
-    port = msg["port"]
+    port = msg["uplink_message"]["f_port"]
     if port == 1:
         return decode_config_message(raw_msg, msg, payload)
     if port == 2:
@@ -148,11 +148,13 @@ def decode_message(raw_msg, msg, payload):
 
 
 def make_ttn_node_id(msg):
-    return "ttn/{}/{}".format(msg["app_id"], msg["dev_id"])
+    return "ttn/{}/{}".format(
+        msg["end_device_ids"]["application_ids"]["application_id"],
+        msg["end_device_ids"]["device_id"])
 
 
 def make_msg_id(node_id, msg):
-    return "{}/{}".format(node_id, msg["metadata"]["time"])
+    return "{}/{}".format(node_id, msg["received_at"])
 
 
 def make_meas_id(msg_id, chan_id):
@@ -171,7 +173,7 @@ def decode_config_message(raw_msg, msg, payload):
     config = Config(
         message_id=msg_id,
         node_id=node_id,
-        timestamp=parse_date(msg["metadata"]["time"]),
+        timestamp=parse_date(msg["received_at"]),
         data=config_entries,
         src=raw_msg,
     )
@@ -228,7 +230,7 @@ def decode_data_message(raw_msg, msg, payload):
 
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
-    timestamp = parse_date(msg["metadata"]["time"])
+    timestamp = parse_date(msg["received_at"])
 
     config = (
         Config.select(lambda c: c.node_id == node_id)

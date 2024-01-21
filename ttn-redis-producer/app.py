@@ -28,7 +28,7 @@ def get_env_or_file(name, default=None):
 def main():
     def on_connect(client, userdata, flags, rc):
         logging.info("Connected to host, subscribing to uplink messages")
-        client.subscribe("+/devices/+/up")
+        client.subscribe("v3/+/devices/+/up")
 
     def on_message(client, userdata, msg):
         logging.debug("Received message %s", str(msg.payload))
@@ -47,7 +47,7 @@ def main():
     redis_stream = os.environ["REDIS_STREAM"]
     app_id = os.environ.get("TTN_APP_ID")
     access_key = get_env_or_file("TTN_ACCESS_KEY")
-    ttn_host = os.environ.get("TTN_HOST", "eu.thethings.network")
+    ttn_host = os.environ.get("TTN_HOST", "eu1.cloud.thethings.network")
     ca_cert_path = os.environ.get("TTN_CA_CERT_PATH", "mqtt-ca.pem")
     ttn_port = 8883
 
