@@ -14,7 +14,6 @@ import elasticsearch
 import redis
 from iso8601 import parse_date
 from pony import orm
-from pony.orm import desc, max
 
 database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
@@ -33,6 +32,7 @@ db.bind(
 # information is stored along with the timestamps. See also
 # https://github.com/ponyorm/pony/issues/434
 
+
 class RawMessage(db.Entity):
     # Single id primary key to make it easier to refer to these messages
     id = orm.PrimaryKey(int, auto=True)
@@ -47,6 +47,7 @@ class RawMessage(db.Entity):
 
     configs = orm.Set("Config")
     bundles = orm.Set("Bundle")
+
 
 class Config(db.Entity):
     message_id = orm.PrimaryKey(str)
@@ -86,6 +87,7 @@ class Measurement(db.Entity):
 
 db.generate_mapping(create_tables=True)
 
+
 def delete_if_exists(entity, **kwargs):
     # This runs a DELETE query without creating an instance. This bypasses the
     # cache, which could be problematic if the instance would already have been
@@ -96,6 +98,7 @@ def delete_if_exists(entity, **kwargs):
     if num:
         logging.info("Deleted previous %s %s", entity.__name__, kwargs)
 
+
 @orm.db_session
 def process_message(entry_id, message):
     payload = message[b'payload']
@@ -104,11 +107,11 @@ def process_message(entry_id, message):
     # First thing, secure the message in the rawest form
     delete_if_exists(RawMessage, src="ttn", src_id=entry_id)
     raw_msg = RawMessage(
-        src = "ttn",
+        src="ttn",
         # TTN does not assign ids, so use the id assigned by redis then
-        src_id = entry_id,
-        received_from_src = timestamp,
-        raw = payload,
+        src_id=entry_id,
+        received_from_src=timestamp,
+        raw=payload,
     )
     orm.commit()
 
@@ -246,9 +249,9 @@ def decode_data_message(raw_msg, msg, payload):
 
     config = (
         Config.select(lambda c: c.node_id == node_id)
-            .where(lambda c: c.timestamp <= timestamp)
-            .order_by(orm.desc(Config.timestamp))
-            .first()
+        .where(lambda c: c.timestamp <= timestamp)
+        .order_by(orm.desc(Config.timestamp))
+        .first()
     )
     logging.debug("Found relevant config: %s", config)
 
