@@ -71,3 +71,9 @@ might need to run pip with `sudo`, with `--user` or create and activate
 a virtualenv beforehand to make sure you can actually install the
 dependencies. You can also install the dependencies using OS packages
 (e.g. using apt) instead.
+
+Useful commands
+---------------
+To delete all data in redis:
+
+	docker-compose exec redis redis-cli flushall
