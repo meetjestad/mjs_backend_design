@@ -1,9 +1,11 @@
 #!/bin/sh
 
 . ./config.env
+. ../secrets.env
 
-export REDIS_URL="redis://localhost:6379/0"
+export REDIS_URL="redis://localhost:63790/0"
 export REDIS_STREAM
-export DATABASE_URL="postgresql://localhost/mjs"
+export DATABASE_URL="postgres://postgres:password@localhost:54320/postgres"
+export CONSYS_URL="http://localhost:8080/sensorhub/consys"
 
 poetry run python app.py "$@"

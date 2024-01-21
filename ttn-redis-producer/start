@@ -7,6 +7,6 @@ export TTN_ACCESS_KEY
 . ./config.env
 export REDIS_STREAM
 
-export REDIS_URL="localhost:6379"
+export REDIS_URL="redis://localhost:6379/0"
 
 python app.py "$@"
