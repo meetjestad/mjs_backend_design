@@ -1,4 +1,5 @@
-FROM python:3
+# 3.12 breaks pony: https://github.com/ponyorm/pony/issues/694
+FROM python:3.11
 
 RUN pip install poetry
 
