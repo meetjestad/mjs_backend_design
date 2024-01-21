@@ -17,13 +17,17 @@ services:
     image: redis:latest
     restart: always
     ports:
-      - 127.0.0.1:6379:6379
+      # For testing scripts outside docker
+      - 127.0.0.1:63790:6379
     volumes:
       - redis-data:/data
 
   timescale:
     image: timescale/timescaledb:latest-pg11
     restart: always
+    ports:
+      # For testing scripts outside docker
+      - 127.0.0.1:54320:5432
     environment:
       POSTGRES_PASSWORD: password
     volumes:
