@@ -65,6 +65,9 @@ services:
     env_file:
      - secrets.env
      - ttn-redis-converter/config.env
+    # Temporarily prevent this from running
+    restart: 'no'
+    command: /bin/true
 
   osh:
     # This refers to a locally built image
