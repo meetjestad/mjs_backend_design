@@ -72,7 +72,7 @@ def process_message(entry_id, message):
 
 
 def decode_message(raw_msg, msg, payload):
-    port = msg["uplink_message"]["f_port"]
+    port = msg["uplink_message"].get("f_port", 0)
     if port == 1:
         return decode_config_message(raw_msg, msg, payload)
     if port == 2:
