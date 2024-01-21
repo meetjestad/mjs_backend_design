@@ -96,7 +96,7 @@ def make_meas_id(msg_id, chan_id):
 
 
 def decode_config_message(raw_msg, msg, payload):
-    entries = decode_config_packet(payload)
+    entries = decode_packet(payload, CONFIG_PACKET_KEYS, CONFIG_PACKET_VALUES)
     logging.debug("Decoded config entries: %s", entries)
     config_entries = decode_config_entries(entries)
 
@@ -117,13 +117,13 @@ def decode_config_message(raw_msg, msg, payload):
     return config
 
 
-def decode_config_packet(payload):
+def decode_packet(payload, keys, values):
     packet = cbor2.loads(payload)
     if not isinstance(packet, list):
         logging.warning("Config packet is not list: %s", packet)
 
     def decode(obj):
-        return decode_cbor_obj(obj, CONFIG_PACKET_KEYS, CONFIG_PACKET_VALUES)
+        return decode_cbor_obj(obj, keys, values)
 
     return list(map(decode, packet))
 
@@ -159,7 +159,7 @@ def decode_config_entries(entries):
 
 def decode_data_message(raw_msg, msg, payload):
     # TODO Decode shortcuts
-    entries = cbor2.loads(payload)
+    entries = decode_packet(payload, DATA_PACKET_KEYS, DATA_PACKET_VALUES)
     logging.debug("Decoded data entries: %s", entries)
 
     node_id = make_ttn_node_id(msg)
@@ -310,6 +310,14 @@ CONFIG_PACKET_VALUES = {
     },
     "sensor": {1: "Si2701"},
     "item_type": {1: "node", 2: "channel"},
+}
+
+DATA_PACKET_KEYS = {
+    1: "channel_id",
+    2: "value",
+}
+
+DATA_PACKET_VALUES = {
 }
 
 
