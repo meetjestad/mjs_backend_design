@@ -6,5 +6,6 @@
 export REDIS_URL="redis://localhost:63790/0"
 export REDIS_STREAM
 export DATABASE_URL="postgres://postgres:password@localhost:54320/postgres"
+export CONSYS_URL="http://localhost:8080/sensorhub/consys"
 
 poetry run python app.py "$@"

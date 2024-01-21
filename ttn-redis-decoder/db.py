@@ -45,6 +45,8 @@ class Config(db.Entity):
 
     src = orm.Required(RawMessage)
     data = orm.Required(orm.Json)
+    datastream_id = orm.Optional(str)
+    field_names = orm.Optional(orm.Json)
 
     bundles = orm.Set("Bundle")
     measurements = orm.Set("Measurement")

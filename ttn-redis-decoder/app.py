@@ -14,6 +14,7 @@ from iso8601 import parse_date
 from pony import orm
 
 import db
+import consys
 
 database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
@@ -74,10 +75,13 @@ def process_message(entry_id, message):
 def decode_message(raw_msg, msg, payload):
     port = msg["uplink_message"].get("f_port", 0)
     if port == 1:
-        return decode_config_message(raw_msg, msg, payload)
-    if port == 2:
-        return decode_data_message(raw_msg, msg, payload)
-    logging.warning("Ignoring message with unknown port: %s", port)
+        obj = decode_config_message(raw_msg, msg, payload)
+        output.process_config_message(obj)
+    elif port == 2:
+        obj = decode_data_message(raw_msg, msg, payload)
+        output.process_data_message(obj)
+    else:
+        logging.warning("Ignoring message with unknown port: %s", port)
     return None
 
 
@@ -292,21 +296,23 @@ CONFIG_PACKET_KEYS = {
 
 CONFIG_PACKET_VALUES = {
     "quantity": {
-        1: "temperature",
-        2: "humidity",
-        3: "voltage",
-        4: "ambient_light",
+        1: "https://qudt.org/vocab/quantitykind/Temperature",
+        2: "https://qudt.org/vocab/quantitykind/RelativeHumidity",
+        3: "https://qudt.org/vocab/quantitykind/Voltage",
+        4: "https://qudt.org/vocab/quantitykind/Illuminance",
+        # TODO: Not present in QUDT?
         5: "particulate_matter",
         6: "position",
     },
     "unit": {
-        # TODO: How to note these? Perhaps just '°C'?
-        1: "degree_celcius",
-        2: "percent_rh",
-        3: "volt",
-        4: "ug_per_cubic_meter",
-        5: "lux",
-        6: "degrees",
+        1: "Cel",
+        # TODO: Sketch code defines this as PercentRelativeHumidity, but
+        # OSH does not accept %{rh}
+        2: "%",
+        3: "V",
+        4: "ug/m3",
+        5: "lx",
+        6: "deg",
     },
     "sensor": {1: "Si2701"},
     "item_type": {1: "node", 2: "channel"},
@@ -359,6 +365,9 @@ def main():
     redis_server = redis.Redis(
         host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0)
     )
+
+    global output
+    output = consys.ConnectedSystems(os.environ["CONSYS_URL"])
 
     messages_from = "0"
     while True:
