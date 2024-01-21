@@ -1,6 +1,14 @@
 FROM python:3
 
-ADD . /code
+RUN pip install poetry
+
+# Install dependencies before adding all code to not invalidate docker
+# layer cache when code changes. See
+# https://medium.com/@albertazzir/blazing-fast-python-docker-builds-with-poetry-a78a66f5aed0
 WORKDIR /code
-RUN pip install -r requirements.txt
-CMD ["python", "app.py"]
+ADD pyproject.toml /code
+ADD poetry.lock /code
+RUN poetry install --without dev --no-root --no-cache
+
+ADD . /code
+CMD ["poetry", "run", "python", "app.py"]

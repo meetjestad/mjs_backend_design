@@ -1,5 +1,0 @@
-redis
-cbor2
-pony
-psycopg2_binary
-iso8601

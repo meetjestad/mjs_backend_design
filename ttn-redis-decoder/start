@@ -6,4 +6,4 @@ export REDIS_URL="redis://localhost:6379/0"
 export REDIS_STREAM
 export DATABASE_URL="postgresql://localhost/mjs"
 
-python app.py "$@"
+poetry run python app.py "$@"
