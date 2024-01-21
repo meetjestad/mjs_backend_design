@@ -10,7 +10,6 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 import cbor2
-import elasticsearch
 import redis
 from iso8601 import parse_date
 from pony import orm
@@ -168,12 +167,6 @@ def decode_config_message(raw_msg, msg, payload):
     node_id = make_ttn_node_id(msg)
     msg_id = make_msg_id(node_id, msg)
 
-    # HACK: Elasticsearch breaks if a field is sometimes a timestamp and
-    # sometimes the empty string, so remove empty time fields for now...
-    for gw_data in msg.get("metadata", {}).get("gateways", []):
-        if "time" in gw_data and not gw_data["time"]:
-            gw_data.pop("time")
-
     delete_if_exists(Config, message_id=msg_id)
     config = Config(
         message_id=msg_id,
@@ -184,16 +177,6 @@ def decode_config_message(raw_msg, msg, payload):
     )
 
     logging.debug("Decoded config: %s", config)
-
-    if es:
-        body = {
-            "node_id": node_id,
-            "timestamp": msg["metadata"]["time"],
-            # TODO: Should this be a reference?
-            "sources": {"ttn": msg},
-        }
-        body.update(config_entries)
-        es.index(index="config", id=msg_id, body=body)
 
     return config
 
@@ -262,12 +245,6 @@ def decode_data_message(raw_msg, msg, payload):
     channels = decode_data_entries(entries, config)
     logging.debug("Decoded data: %s", channels)
 
-    # HACK: Elasticsearch breaks if a field is sometimes a timestamp and
-    # sometimes the empty string, so remove empty time fields for now...
-    for gw_data in msg.get("metadata", {}).get("gateways", []):
-        if "time" in gw_data and not gw_data["time"]:
-            gw_data.pop("time")
-
     delete_if_exists(Bundle, message_id=msg_id)
     bundle = Bundle(
         config=config,
@@ -280,15 +257,6 @@ def decode_data_message(raw_msg, msg, payload):
     orm.commit()
 
     logging.debug("Decoded data: %s", bundle)
-
-    if es:
-        body = {
-            "node_id": node_id,
-            "timestamp": msg["metadata"]["time"],
-            "config_id": config["_id"] if config else None,
-            "channels": channels,
-        }
-        es.index(index="data", id=msg_id, body=body)
 
     for name, data in channels.items():
         chan_id = data["channel_id"]
@@ -306,16 +274,6 @@ def decode_data_message(raw_msg, msg, payload):
         )
 
         logging.debug("Decoded single data: %s", measurement)
-
-        if es:
-            body = {
-                "node_id": node_id,
-                "timestamp": msg["metadata"]["time"],
-                "config_id": config["_id"] if config else None,
-                "channel_id": chan_id,
-                "data": data,
-            }
-            es.index(index="data_single", id=meas_id, body=body)
 
     return bundle
 
@@ -447,8 +405,6 @@ def decode_cbor_obj(obj, keys, values):
 
 
 def main():
-    global es
-
     logging.basicConfig(level=logging.DEBUG)
 
     redis_stream = os.environ["REDIS_STREAM"]
@@ -459,13 +415,6 @@ def main():
     redis_server = redis.Redis(
         host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0)
     )
-
-    elastic_host = os.environ["ELASTIC_HOST"]
-    if elastic_host:
-        logging.info("Connecting Elasticsearch to %s", elastic_host)
-        es = elasticsearch.Elasticsearch(elastic_host)
-    else:
-        es = None
 
     messages_from = "0"
     while True:
