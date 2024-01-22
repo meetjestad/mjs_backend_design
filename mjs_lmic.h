@@ -88,6 +88,11 @@ void os_getArtEui (uint8_t* buf) {
     #endif
   }
 }
+*/
+
+// Override join EUI with meet-je-stad-test EUI that we got assigned on ttnv2
+static const u1_t PROGMEM APPEUI[8]={ 0x3A, 0x03, 0x00, 0xD0, 0x7E, 0xD5, 0xB3, 0x70 };
+void os_getArtEui (u1_t* buf) { memcpy_P(buf, APPEUI, 8);}
 
 void os_getDevEui (uint8_t* buf) {
   for (byte i = 0; i < MJS_DEV_EUI_LEN; i++) {
