@@ -107,7 +107,7 @@ uint8_t const LUX_HIGH_PIN = 0; // TODO: PA6 not mapped?
 uint8_t const LUX_PIN = 0; // TODO: PC3 not mapped?
 
 // Enable this define when an SPS30 is attached over I²C
-#define WITH_SPS30_I2C
+//#define WITH_SPS30_I2C
 
 #else
   #error "Unknown board"
