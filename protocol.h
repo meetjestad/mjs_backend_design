@@ -108,7 +108,7 @@ class Packet {
     // TODO: Type of value?
     // TODO: Extra key-value pairs?
     // TODO: Store variables? Or generate packet directly?
-    void addValue(const Variable& variable, uint32_t value);
+    void addValue(const Variable& variable, int32_t value);
     CborOutput& out;
     CborWriter writer;
 };
@@ -160,7 +160,7 @@ Packet<MaxVariables>::Packet(CborOutput& out) : out(out), writer(out) {
 }
 
 template <size_t MaxVariables>
-void Packet<MaxVariables>::addValue(const Variable& variable, uint32_t value) {
+void Packet<MaxVariables>::addValue(const Variable& variable, int32_t value) {
   this->writer.writeMap(2);
 
   this->writer.writeInt((long)DataKey::ChannelId);
