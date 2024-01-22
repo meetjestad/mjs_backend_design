@@ -61,6 +61,11 @@ enum class Sensor : uint8_t {
   Si7021 = 1,
 };
 
+enum class DataKey : uint8_t {
+  ChannelId = 1,
+  Value = 2,
+};
+
 class Variable {
   public:
     Variable() { }
@@ -158,10 +163,10 @@ template <size_t MaxVariables>
 void Packet<MaxVariables>::addValue(const Variable& variable, uint32_t value) {
   this->writer.writeMap(2);
 
-  this->writer.writeString("channel_id");
+  this->writer.writeInt((long)DataKey::ChannelId);
   this->writer.writeInt(variable.index);
 
-  this->writer.writeString("value");
+  this->writer.writeInt((long)DataKey::Value);
   this->writer.writeInt(value);
   // TODO: Encoding of value
 }
