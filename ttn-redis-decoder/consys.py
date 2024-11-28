@@ -32,7 +32,7 @@ class ConnectedSystems:
         logging.debug("%s %s -> %s%s", req.method, req.url, response.status_code, extra)
         if req.method == 'POST' and req.body:
             logging.debug("POST data: %s", req.body)
-        if response.status_code == 200 and response.content:
+        if response.content:
             logging.debug("Response data: %s", response.content)
 
     def post(self, url=None, path=None, content_type=None, **kwargs):
