@@ -172,7 +172,7 @@ def decode_data_message(raw_msg, msg, payload):
         .order_by(orm.desc(db.Config.timestamp))
         .first()
     )
-    logging.debug("Found relevant config: %s", config)
+    logging.debug("Found relevant config: %s: %s", config, config.to_dict())
 
     if not config:
         logging.warning("Found no relevant config, returning")
@@ -192,7 +192,7 @@ def decode_data_message(raw_msg, msg, payload):
     )
     orm.commit()
 
-    logging.debug("Decoded data: %s", bundle)
+    logging.debug("Decoded data: %s: %s", bundle, bundle.to_dict())
 
     for name, data in channels.items():
         chan_id = data["channel_id"]
