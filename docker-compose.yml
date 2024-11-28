@@ -9,7 +9,7 @@ services:
     ports:
       - 127.0.0.1:8080:80
     environment:
-      - SENSORHUB_URL=https://osh:443/
+      - SENSORHUB_URL=http://osh:8080
     links:
       - osh:osh
 
@@ -75,21 +75,29 @@ services:
 
   osh:
     # This refers to a locally built image
-    image: osh-node-dev-template_osh:latest
+    #image: osh-node-osh:latest
+    build:
+      context: ./osh-docker-template/
+      args:
+        REPO_URL: https://github.com/opensensorhub/osh-node-dev-template.git
+        BRANCH: master
     volumes:
-      - osh-data:/opt/opensensorhub/data
-      - ./osh-log:/opt/opensensorhub/data/log
+      - osh-data:/opt/osh/data
+      - osh-db:/opt/osh/db
+      - ./osh/config:/opt/osh/config
+      - ./osh/log:/opt/osh/.moduledata
+      - ./osh/userclasses:/opt/osh/userclasses
+      - ./osh/userlib:/opt/osh/userlib
 
-  # Additional setup:
+  # Additional setup done on top of osh-docker-template config:
   # http://localhost:8080/sensorhub/admin
-  #  - Move Sensorweb service to /sensorweb
   #  - Create Consys service on /consys, select existing database,
   #    disable authentication
   #  - Update Network -> HTTP Server -> Proxy Base URL to
   #    http://localhost:8080/
-  #  - docker-compose exec osh chown osh: /opt/opensensorhub/data/log
 
 volumes:
   redis-data:
   timescale-data:
   osh-data:
+  osh-db:
