@@ -6,6 +6,7 @@ import itertools
 import json
 import logging
 import os
+import uuid
 from urllib.parse import urlparse
 
 import cbor2
@@ -15,12 +16,6 @@ from pony import orm
 
 import db
 import consys
-
-database_url = urlparse(os.environ["DATABASE_URL"])
-redis_url = urlparse(os.environ["REDIS_URL"])
-
-db.init(database_url)
-
 
 def delete_if_exists(entity, **kwargs):
     # This runs a DELETE query without creating an instance. This bypasses the
@@ -37,12 +32,13 @@ def delete_if_exists(entity, **kwargs):
 def process_message(entry_id, message):
     payload = message[b'payload']
     timestamp = parse_date(message[b'timestamp'].decode('utf8'))
-
     # First thing, secure the message in the rawest form
     delete_if_exists(db.RawMessage, src="ttn", src_id=entry_id)
     raw_msg = db.RawMessage(
         src="ttn",
         # TTN does not assign ids, so use the id assigned by redis then
+        # TODO: Use unique_id from TTN? Shown in TTN console, but not in
+        # MQTT JSON... Also use it for msg_id.
         src_id=entry_id,
         received_from_src=timestamp,
         raw=payload,
@@ -76,13 +72,177 @@ def decode_message(raw_msg, msg, payload):
     port = msg["uplink_message"].get("f_port", 0)
     if port == 1:
         obj = decode_config_message(raw_msg, msg, payload)
-        output.process_config_message(obj)
+        process_config_message(obj)
     elif port == 2:
         obj = decode_data_message(raw_msg, msg, payload)
-        output.process_data_message(obj)
+        process_data_message(obj)
     else:
         logging.warning("Ignoring message with unknown port: %s", port)
     return None
+
+
+def process_config_message(obj: db.Config):
+    system_urn = "{}:system:{}".format(output.urn_root, obj.node_id)
+
+    procedure_uid = uuid.uuid4().urn
+
+    procedure_fields = ""
+
+    for chan_id, channel in obj.data["channel_config"].items():
+        quantity_url = channel["quantity"]
+        # TODO: Explicitly specify name in node?
+        name = os.path.basename(urlparse(quantity_url).path)
+        uom = channel["unit"]
+        procedure_fields += f"""
+        <swe:field name="{name}">
+           <swe:Quantity definition="{quantity_url}">
+              <swe:uom code="{uom}"/>
+           </swe:Quantity>
+        </swe:field>
+        """
+
+    # TODO: This seems to give a non-descript 400 error
+    procedure = f"""<?xml version="1.0" encoding="UTF-8"?>
+    <sml:PhysicalSystem gml:id="MY_WEATHER_STATION"
+       xmlns:sml="http://www.opengis.net/sensorml/2.0"
+       xmlns:swe="http://www.opengis.net/swe/2.0"
+       xmlns:gml="http://www.opengis.net/gml/3.2"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:xlink="http://www.w3.org/1999/xlink"
+       xsi:schemaLocation="http://www.opengis.net/sensorml/2.0 http://schemas.opengis.net/sensorml/2.0/sensorML.xsd">
+       <!-- ================================================= -->
+       <!--                  System Description               -->
+       <!-- ================================================= -->
+       <!-- <gml:description>TODO</gml:description> -->
+       <gml:identifier codeSpace="uniqueID">{procedure_uid}</gml:identifier>
+       <gml:name>TODO</gml:name>
+
+        <!-- TODO: Examples define observed properties as inputs, do we need that? -->
+        <!-- TODO: Revisit all definition attributes, want ontologies to use? -->
+
+       <sml:identification>
+         <sml:IdentifierList>
+            <sml:identifier>
+              <sml:Term definition="http://www.opengis.net/def/ogc/PlatformType">
+                <sml:label>Platform Type</sml:label>
+                  <!-- TODO: Unhardcode -->
+                  <sml:value>mjs2020</sml:value>
+                </sml:Term>
+            </sml:identifier>
+         </sml:IdentifierList>
+       </sml:identification>
+
+
+       <sml:outputs>
+          <sml:OutputList>
+             <sml:output name="data">
+                <swe:DataRecord>
+                   {procedure_fields}
+                </swe:DataRecord>
+             </sml:output>
+          </sml:OutputList>
+       </sml:outputs>
+    </sml:PhysicalSystem>
+    """
+
+    procedure_path = output.create_procedure(content=procedure, content_type="application/sml+xml")
+
+    system = {
+        "type": "PhysicalSystem",
+        # "id": "abcd", # Ignored by OSH?
+        "definition": "http://www.w3.org/ns/sosa/Sensor",
+        "uniqueId": system_urn,
+        "label": obj.node_id,
+        "description": "TODO",
+        "typeOf": {
+            "href": output.url + procedure_path,
+            "uid": procedure_uid,
+            "type": "application/sml+json",
+        },
+    }
+
+    system_path = output.create_system(content=system, content_type="application/sml+json")
+
+    fields = []
+    field_names = {}
+    for chan_id, channel in obj.data["channel_config"].items():
+        quantity_url = channel["quantity"]
+        # TODO: Explicitly specify name in node?
+        name = os.path.basename(urlparse(quantity_url).path)
+        fields.append({
+            "type": "Quantity",
+            "name": name,
+            "definition": quantity_url,
+            "label": "TODO",
+            "description": "TODO",
+            # TODO: Units can also be a href
+            "uom": {
+                "code": channel["unit"],
+            },
+        })
+        field_names[chan_id] = name
+
+    datastream = {
+        "name": obj.node_id,
+        "description": "TODO",
+        # "ultimateFeatureOfInterest@link": {
+        #     "href": "https://data.example.org/api/collections/buildings/items/754",
+        #     "title": "My House"
+        # },
+        # "samplingFeature@link": {
+        #     "href": "https://data.example.org/api/samplingFeatures/4478",
+        #     "title": "Thermometer Sampling Point"
+        # },
+        "outputName": "data",
+        # Note: Schema property is write-only, so queries must use the
+        # /schema nested endpoint.
+        "schema": {
+            "obsFormat": "application/om+json",
+            "resultTimeSchema": {
+                "name": "time",
+                "type": "Time",
+                "definition": "http://www.opengis.net/def/property/OGC/0/SamplingTime",
+                "referenceFrame": "http://www.opengis.net/def/trs/BIPM/0/UTC",
+                "uom": {
+                    "href": "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian"
+                }
+            },
+            "resultSchema": {
+                "type": "DataRecord",
+                "fields": fields,
+            }
+        }
+    }
+
+    datastream_path = output.create_datastream(system_path, content=datastream, content_type="application/json")
+
+    prefix = "/datastreams/"
+    assert datastream_path.startswith(prefix)
+    datastream_id = datastream_path[len(prefix):]
+
+    obj.datastream_id = datastream_id
+    obj.field_names = field_names
+    # TODO: This is out of place, might commit other stuff, etc.
+    orm.commit()
+
+
+def process_data_message(obj: db.Bundle):
+    observation = {
+        "resultTime": obj.timestamp.isoformat(),
+        "phenomenonTime": obj.timestamp.isoformat(),
+        "result": {},
+    }
+
+    for channel in obj.data.values():
+        name = obj.config.field_names[str(channel['channel_id'])]
+        observation['result'][name] = channel["value"]
+    # TODO: Check if all fields are present? OSH rejects the
+    # observation otherwise
+
+    output.create_observation(
+        f"/datastreams/{obj.config.datastream_id}",
+        content=observation, content_type="application/om+json",
+    )
 
 
 def make_ttn_node_id(msg):
@@ -357,6 +517,9 @@ def decode_cbor_obj(obj, keys, values):
 def main():
     logging.basicConfig(level=logging.DEBUG)
 
+    database_url = urlparse(os.environ["DATABASE_URL"])
+    redis_url = urlparse(os.environ["REDIS_URL"])
+
     redis_stream = os.environ["REDIS_STREAM"]
 
     logging.info(
@@ -368,6 +531,8 @@ def main():
 
     global output
     output = consys.ConnectedSystems(os.environ["CONSYS_URL"])
+
+    db.init(database_url)
 
     messages_from = "0"
     while True:
@@ -385,6 +550,7 @@ def main():
                     logging.exception("Error processing message: %s", ex)
 
 
-main()
+if __name__ == "__main__":
+    main()
 
 # vim: set sw=4 sts=4 expandtab:

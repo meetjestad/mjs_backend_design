@@ -1,11 +1,6 @@
-import db
-import os
 import logging
-import urllib
-import uuid
 
 import requests
-from pony import orm
 
 
 class ConnectedSystems:
@@ -36,7 +31,10 @@ class ConnectedSystems:
         if response.content:
             logging.debug("Response data: %s", response.content)
 
-    def post(self, url=None, path=None, content_type=None, **kwargs):
+        if not response:
+            logging.warning(f"{req.method} {req.url} failed with {response.status_code}\n{response.content.decode()}")
+
+    def request(self, method, url=None, path=None, content_type=None, **kwargs):
         assert (url and not path) or (path and not url)
 
         if not url:
@@ -46,180 +44,61 @@ class ConnectedSystems:
         if content_type:
             kwargs['headers']['Content-Type'] = content_type
 
-        response = self.session.post(url, **kwargs)
+        response = self.session.request(method, url, **kwargs)
         response.raise_for_status()
         return response
 
-    def process_config_message(self, obj: db.Config):
-        system_urn = "{}:system:{}".format(self.urn_root, obj.node_id)
+    def get(self, **kwargs):
+        return self.request(method="GET", **kwargs)
 
-        procedure_uid = uuid.uuid4().urn
+    def post(self, **kwargs):
+        return self.request(method="POST", **kwargs)
 
-        procedure_fields = ""
+    def delete(self, **kwargs):
+        return self.request(method="DELETE", **kwargs)
 
-        for chan_id, channel in obj.data["channel_config"].items():
-            quantity_url = channel["quantity"]
-            # TODO: Explicitly specify name in node?
-            name = os.path.basename(urllib.parse.urlparse(quantity_url).path)
-            uom = channel["unit"]
-            procedure_fields += f"""
-            <swe:field name="{ name }">
-               <swe:Quantity definition="{ quantity_url }">
-                  <swe:uom code="{ uom }"/>
-               </swe:Quantity>
-            </swe:field>
-            """
+    def create_object(self, path: str, content: str | object, content_type: str):
+        if isinstance(content, str):
+            data = content
+            json = None
+        else:
+            data = None
+            json = content
+        response = self.post(path=path, data=data, json=json, content_type=content_type)
+        assert response.status_code == 201
+        # This should redirect to the id/path of the added object
+        return response.headers["Location"]
 
-        # TODO: This seems to give a non-descript 400 error
-        procedure = f"""<?xml version="1.0" encoding="UTF-8"?>
-        <sml:PhysicalSystem gml:id="MY_WEATHER_STATION"
-           xmlns:sml="http://www.opengis.net/sensorml/2.0"
-           xmlns:swe="http://www.opengis.net/swe/2.0"
-           xmlns:gml="http://www.opengis.net/gml/3.2"
-           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-           xmlns:xlink="http://www.w3.org/1999/xlink"
-           xsi:schemaLocation="http://www.opengis.net/sensorml/2.0 http://schemas.opengis.net/sensorml/2.0/sensorML.xsd">
-           <!-- ================================================= -->
-           <!--                  System Description               -->
-           <!-- ================================================= -->
-           <!-- <gml:description>TODO</gml:description> -->
-           <gml:identifier codeSpace="uniqueID">{procedure_uid}</gml:identifier>
-           <gml:name>TODO</gml:name>
+    def create_procedure(self, content: str, content_type: str):
+        return self.create_object("/procedures", content, content_type)
 
-            <!-- TODO: Examples define observed properties as inputs, do we need that? -->
-            <!-- TODO: Revisit all definition attributes, want ontologies to use? -->
+    def create_system(self, content: str | object, content_type: str):
+        return self.create_object("/systems", content, content_type)
 
-           <sml:identification>
-             <sml:IdentifierList>
-                <sml:identifier>
-                  <sml:Term definition="http://www.opengis.net/def/ogc/PlatformType">
-                    <sml:label>Platform Type</sml:label>
-                      <!-- TODO: Unhardcode -->
-                      <sml:value>mjs2020</sml:value>
-                    </sml:Term>
-                </sml:identifier>
-             </sml:IdentifierList>
-           </sml:identification>
+    def create_datastream(self, system_path: str, content: str | object, content_type: str):
+        return self.create_object(system_path + "/datastreams", content, content_type)
 
+    def create_observation(self, datastream_path: str, content: str | object, content_type: str):
+        return self.create_object(datastream_path + "/observations", content, content_type)
 
-           <sml:outputs>
-              <sml:OutputList>
-                 <sml:output name="data">
-                    <swe:DataRecord>
-                       { procedure_fields }
-                    </swe:DataRecord>
-                 </sml:output>
-              </sml:OutputList>
-           </sml:outputs>
-        </sml:PhysicalSystem>
-        """
+    def delete_object(self, path: str):
+        self.delete(path=path)
 
-        procedure_response = self.post(path="/procedures", data=procedure, content_type="application/sml+xml")
-        assert procedure_response.status_code == 201
-        # This should redirect to the id/path of the added system
-        procedure_path = procedure_response.headers["Location"]
+    def get_object_by_id(self, path: str, id: str):
+        # id filter should also filter by uid according to consys spec,
+        # but osh uses different param for that. See:
+        # sensorhub-service-consys/src/main/java/org/sensorhub/impl/service/consys/resource/ResourceHandler.java
+        # sensorhub-service-consys/src/main/java/org/sensorhub/impl/service/consys/feature/AbstractFeatureHandler.java
+        # Fixed 2025-03-26
+        response = self.get(path=path, params={'id': id})
+        # TODO generalize with by_uid below?
+        return response
 
-        system = {
-            "type": "PhysicalSystem",
-            # "id": "abcd", # Ignored by OSH?
-            "definition": "http://www.w3.org/ns/sosa/Sensor",
-            "uniqueId": system_urn,
-            "label": obj.node_id,
-            "description": "TODO",
-            "typeOf": {
-                "href": self.url + procedure_path,
-                "uid": procedure_uid,
-                "type": "application/sml+json",
-            },
-        }
+    def get_object_by_uid(self, path: str, uid: str):
+        response = self.get(path=path, params={'uid': uid})
 
-        system_response = self.post(path="/systems", json=system, content_type="application/sml+json")
-        assert system_response.status_code == 201
-        # This should redirect to the id/path of the added system
-        system_path = system_response.headers["Location"]
-
-        fields = []
-        field_names = {}
-        for chan_id, channel in obj.data["channel_config"].items():
-            quantity_url = channel["quantity"]
-            # TODO: Explicitly specify name in node?
-            name = os.path.basename(urllib.parse.urlparse(quantity_url).path)
-            fields.append({
-                "type": "Quantity",
-                "name": name,
-                "definition": quantity_url,
-                "label": "TODO",
-                "description": "TODO",
-                # TODO: Units can also be a href
-                "uom": {
-                    "code": channel["unit"],
-                },
-            })
-            field_names[chan_id] = name
-
-        datastream = {
-            "name": obj.node_id,
-            "description": "TODO",
-            # "ultimateFeatureOfInterest@link": {
-            #     "href": "https://data.example.org/api/collections/buildings/items/754",
-            #     "title": "My House"
-            # },
-            # "samplingFeature@link": {
-            #     "href": "https://data.example.org/api/samplingFeatures/4478",
-            #     "title": "Thermometer Sampling Point"
-            # },
-            "outputName": "data",
-            "schema": {
-                "obsFormat": "application/om+json",
-                "resultTimeSchema": {
-                    "name": "time",
-                    "type": "Time",
-                    "definition": "http://www.opengis.net/def/property/OGC/0/SamplingTime",
-                    "referenceFrame": "http://www.opengis.net/def/trs/BIPM/0/UTC",
-                    "uom": {
-                        "href": "http://www.opengis.net/def/uom/ISO-8601/0/Gregorian"
-                    }
-                },
-                "resultSchema": {
-                    "type": "DataRecord",
-                    "fields": fields,
-                }
-            }
-        }
-
-        datastream_response = self.post(
-            path=system_path + "/datastreams", json=datastream, content_type="application/json"
-        )
-        # This should redirect to the id/path of the added datastream
-        assert datastream_response.status_code == 201
-        datastream_path = datastream_response.headers["Location"]
-
-        prefix = "/datastreams/"
-        assert datastream_path.startswith(prefix)
-        datastream_id = datastream_path[len(prefix):]
-
-        obj.datastream_id = datastream_id
-        obj.field_names = field_names
-        # TODO: This is out of place, might commit other stuff, etc.
-        orm.commit()
-
-    def process_data_message(self, obj: db.Bundle):
-        observation = {
-            "resultTime": obj.timestamp.isoformat(),
-            "phenomenonTime": obj.timestamp.isoformat(),
-            "result": {},
-        }
-
-        for channel in obj.data.values():
-            name = obj.config.field_names[str(channel['channel_id'])]
-            observation['result'][name] = channel["value"]
-        # TODO: Check if all fields are present? OSH rejects the
-        # observation otherwise
-
-        observations_path = "/datastreams/{}/observations/".format(obj.config.datastream_id)
-        observation_response = self.post(
-            path=observations_path, json=observation, content_type="application/om+json"
-        )
-
-        # This should redirect to the id/path of the added datastream
-        assert observation_response.status_code == 201
+        objs = response.json()['items']
+        if not objs:
+            return None
+        assert len(objs) == 1
+        return objs[0]

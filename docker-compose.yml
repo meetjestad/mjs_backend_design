@@ -15,7 +15,7 @@ services:
 
   redis:
     image: redis:latest
-    restart: always
+    #restart: always
     ports:
       # For testing scripts outside docker
       - 127.0.0.1:63790:6379
@@ -24,7 +24,7 @@ services:
 
   timescale:
     image: timescale/timescaledb:latest-pg11
-    restart: always
+    #restart: always
     ports:
       # For testing scripts outside docker
       - 127.0.0.1:54320:5432
@@ -35,7 +35,7 @@ services:
 
   ttn-redis-producer:
     build: ttn-redis-producer
-    restart: always
+    #restart: always
     links:
       - redis:redis
     environment:
@@ -46,7 +46,7 @@ services:
 
   ttn-redis-decoder:
     build: ttn-redis-decoder
-    restart: always
+    #restart: always
     links:
       - redis:redis
       - timescale:timescale
@@ -61,7 +61,7 @@ services:
 
   ttn-redis-converter:
     build: ttn-redis-converter
-    restart: always
+    #restart: always
     links:
       - redis:redis
     environment:
@@ -79,8 +79,10 @@ services:
     build:
       context: ./osh-docker-template/
       args:
-        REPO_URL: https://github.com/opensensorhub/osh-node-dev-template.git
-        BRANCH: master
+        #REPO_URL: https://github.com/opensensorhub/osh-node-dev-template.git
+        #BRANCH: master
+        REPO_URL: https://github.com/matthijskooijman/osh-node-dev-template.git
+        BRANCH: enable-sensorthings
     volumes:
       - osh-data:/opt/osh/data
       - osh-db:/opt/osh/db
@@ -95,6 +97,8 @@ services:
   #    disable authentication
   #  - Update Network -> HTTP Server -> Proxy Base URL to
   #    http://localhost:8080/
+  # TODO: This only works if "localhost" is not in the base url:
+  # https://github.com/opensensorhub/osh-core/issues/279
 
 volumes:
   redis-data:
