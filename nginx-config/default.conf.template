@@ -12,10 +12,10 @@ server {
         root   /usr/share/nginx/html;
     }
 
-    location /sensorhub/ {
+    location /sensorthings/ {
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_pass   ${SENSORHUB_URL}/sensorhub/;
+        proxy_pass   ${SENSORTHINGS_URL};
     }
 }
 

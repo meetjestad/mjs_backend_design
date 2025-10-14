@@ -1,5 +1,4 @@
 ---
-version: '2'
 services:
   web:
     image: nginx
@@ -9,7 +8,7 @@ services:
     ports:
       - 127.0.0.1:8080:80
     environment:
-      - SENSORHUB_URL=https://osh:443/
+      SENSORTHINGS_URL: http://frost-web:8080/FROST-Server/v1.1
     links:
       - osh:osh
 
@@ -73,23 +72,43 @@ services:
     profiles:
      - disabled
 
-  osh:
-    # This refers to a locally built image
-    image: osh-node-dev-template_osh:latest
-    volumes:
-      - osh-data:/opt/opensensorhub/data
-      - ./osh-log:/opt/opensensorhub/data/log
+  frost-web:
+    # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
+    image: fraunhoferiosb/frost-server:2.7.0-SNAPSHOT
+    environment:
+      # For all settings see: https://fraunhoferiosb.github.io/FROST-Server/settings/settings.html
+      #- serviceRootUrl=http://localhost:8081/sta
+      - plugins_multiDatastream.enable=true
+      - http_cors_enable=true
+      - http_cors_allowed_origins=*
+      - persistence_db_driver=org.postgresql.Driver
+      - persistence_db_url=jdbc:postgresql://frost-db:5432/frost
+      - persistence_db_username=frost
+      - persistence_db_password=some_password
+      - persistence_autoUpdateDatabase=true
+      - logSensitiveData=true
+    #ports:
+    #  - 127.0.0.1:1883:1883
+    depends_on:
+      frost-db:
+        condition: service_healthy
 
-  # Additional setup:
-  # http://localhost:8080/sensorhub/admin
-  #  - Move Sensorweb service to /sensorweb
-  #  - Create Consys service on /consys, select existing database,
-  #    disable authentication
-  #  - Update Network -> HTTP Server -> Proxy Base URL to
-  #    http://localhost:8080/
-  #  - docker-compose exec osh chown osh: /opt/opensensorhub/data/log
+  frost-db:
+    image: postgis/postgis:16-3.4-alpine
+    environment:
+      - POSTGRES_DB=frost
+      - POSTGRES_USER=frost
+      - POSTGRES_PASSWORD=some_password
+    volumes:
+      - frost-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d frost -U frost "]
+      interval: 2s
+      timeout: 2s
+      retries: 10
 
 volumes:
+  frost-db-data:
   redis-data:
   timescale-data:
   osh-data:
