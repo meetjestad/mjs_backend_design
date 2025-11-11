@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "ttn-save-msg"
+version = "0.1.0"
+description = ""
+authors = ["Matthijs Kooijman <matthijs@stdin.nl>"]
+license = "CC0"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+redis = "^7.0.1"
+pony = "^0.7.19"
+iso8601 = "^2.1.0"
+psycopg2-binary = "^2.9.11"
+
+[tool.poetry.group.dev]
+optional = true
+
+[tool.poetry.group.dev.dependencies]
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
