@@ -32,8 +32,8 @@ services:
     volumes:
       - timescale-data:/var/lib/postgresql/data
 
-  ttn-redis-producer:
-    build: ttn-redis-producer
+  ttn-to-redis:
+    build: ttn-to-redis
     restart: always
     links:
       - redis:redis
@@ -41,7 +41,7 @@ services:
       REDIS_URL: redis://redis:6379/0
     env_file:
      - secrets.env
-     - ttn-redis-producer/config.env
+     - ttn-to-redis/config.env
 
   ttn-redis-decoder:
     build: ttn-redis-decoder
