@@ -3,3 +3,5 @@ secrets.env
 venv
 *.swp
 *.swo
+*.pyc
+__pycache__
