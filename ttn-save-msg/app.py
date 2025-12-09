@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 # vim:fileencoding=utf8
 # pylint: disable=missing-docstring
-import base64
-import json
 import logging
 import os
 from urllib.parse import urlparse
@@ -17,6 +15,8 @@ database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
 redis_stream_in = os.environ["REDIS_STREAM_IN"]
 redis_stream_out = os.environ["REDIS_STREAM_OUT"]
+redis_consumer_group = os.environ["REDIS_CONSUMER_GROUP"]
+
 try:
     redis_maxlen = int(os.environ["REDIS_MAXLEN"])
 except KeyError:
@@ -55,6 +55,7 @@ def process_message(redis_server, entry_id, message):
         raw=ttn_msg,
     )
     orm.commit()
+    logging.debug("Saved message with id %s", raw_msg.id)
 
     try:
         redis_server.xadd(
@@ -74,6 +75,7 @@ def process_message(redis_server, entry_id, message):
             approximate=True,
             ref_policy="ACKED",
         )
+        logging.debug("Forwarded message to stream %s", redis_stream_out)
     # pylint: disable=broad-except
     except Exception as ex:
         # TODO: Signal somewhere
@@ -91,18 +93,35 @@ def main():
         host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0), decode_responses=True,
     )
 
-    # TODO: Consumer group
-    messages_from = "0"
+    # We user a consumer group, not with the intention of having
+    # multiple consumers (since we need messages to be in-order
+    # usually), but since that allows explicit acking and deleting only
+    # acked messages.
+    if not [g for g in redis_server.xinfo_groups(name=redis_stream_in) if g['name'] in redis_consumer_group]:
+        redis_server.xgroup_create(name=redis_stream_in, groupname=redis_consumer_group, id="0")
+    # Since we expect only one consumer, use the group name as the consumer name
+    redis_consumer_name = redis_consumer_group
+
     while True:
-        for stream_name, messages in redis_server.xread(
-                {redis_stream_in: messages_from}, block=60 * 1000
+        # The special > id means "messages not seen by any consumer yet
+        message_from = '>'
+        for stream_name, messages in redis_server.xreadgroup(
+            groupname=redis_consumer_group,
+            consumername=redis_consumer_name,
+            block=60 * 1000,
+            streams={redis_stream_in: message_from},
         ):
             for entry_id, message in messages:
-                messages_from = entry_id
+                logging.debug("Received message on stream %s: %s", stream_name, message)
                 try:
                     process_message(redis_server, entry_id, message)
+                    redis_server.xack(stream_name, redis_consumer_group, entry_id)
                 # pylint: disable=broad-except
                 except Exception as ex:
+                    # TODO: Any messages not acked linger in the stream
+                    # forever. We should report these errors and have a
+                    # way to reprocess pending messages after the
+                    # underlying error was fixed?
                     logging.exception("Error processing message: %s", ex)
 
 
