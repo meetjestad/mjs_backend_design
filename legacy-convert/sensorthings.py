@@ -76,13 +76,16 @@ class QOp(QExpression):
 class SensorThings:
     """Talk to OGC SensorThings API"""
 
-    def __init__(self, url):
+    def __init__(self, url, username=None, password=None):
         logging.info(
             "Using Sensorthings API at {}".format(url)
         )
 
         self.url = url
         self.session = requests.Session()
+        if username is not None and password is not None:
+            logging.info(f"Authenticating Sensorthings API as user {username} and password (not logged)")
+            self.session.auth = requests.auth.HTTPBasicAuth(username, password)
         self.session.hooks['response'].append(self.log_request)
 
     def log_request(self, response, *args, **kwargs):

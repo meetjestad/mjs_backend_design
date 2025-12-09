@@ -53,8 +53,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
       SENSORTHINGS_URL: http://frost-web:8080/FROST-Server/v1.1
+      SENSORTHINGS_USER: write
     env_file:
      - legacy-convert/config.env
+     - secrets.env
 
   frost-web:
     # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
@@ -71,6 +73,13 @@ services:
       - persistence_db_password=some_password
       - persistence_autoUpdateDatabase=true
       - logSensitiveData=true
+      - auth_provider=de.fraunhofer.iosb.ilt.frostserver.auth.basic.BasicAuthProvider
+      - auth_allowAnonymousRead=true
+      - auth_db_driver=org.postgresql.Driver
+      - auth_db_url=jdbc:postgresql://frost-db:5432/frost
+      - auth_db_username=frost
+      - auth_db_password=some_password
+      - auth_autoUpdateDatabase=true
     depends_on:
       frost-db:
         condition: service_healthy

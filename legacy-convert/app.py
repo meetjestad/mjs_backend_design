@@ -24,7 +24,6 @@ redis_url = urlparse(os.environ["REDIS_URL"])
 redis_stream = os.environ["REDIS_STREAM"]
 
 db.init(database_url)
-sta = sensorthings.SensorThings(os.environ["SENSORTHINGS_URL"])
 
 
 def delete_if_exists(entity, **kwargs):
@@ -39,7 +38,7 @@ def delete_if_exists(entity, **kwargs):
 
 
 @orm.db_session
-def process_message(entry_id, message):
+def process_message(sta, entry_id, message):
     ttn_msg = message['raw']
     topic = message['src_stream']
 
@@ -58,15 +57,10 @@ def process_message(entry_id, message):
     payload = base64.b64decode(msg_obj.get('uplink_message', {}).get('frm_payload', ''))
     port = msg_obj.get('uplink_message', {}).get("f_port", 0)
 
-    try:
-        decode_uplink(msg_obj, port, payload)
-    # pylint: disable=broad-except
-    except Exception as ex:
-        logging.exception("Error processing packet: %s", ex, stack_info=True)
-        return
+    decode_uplink(sta, msg_obj, port, payload)
 
 
-def decode_uplink(msg_obj, port, payload):
+def decode_uplink(sta, msg_obj, port, payload):
     stream = bitstring.ConstBitStream(bytes=payload)
 
     l = len(payload)
@@ -191,15 +185,15 @@ def decode_uplink(msg_obj, port, payload):
     # was started?
     check_metadata = True
 
-    thing = get_or_create_thing(msg_obj, data, check_metadata)
+    thing = get_or_create_thing(sta, msg_obj, data, check_metadata)
 
     logging.info("Decoded: %s", data)
     logging.info("Found: %s", thing)
 
-    create_observations(thing, msg_obj, data)
+    create_observations(sta, thing, msg_obj, data)
 
 
-def create_observations(thing, msg_obj, data):
+def create_observations(sta, thing, msg_obj, data):
     time = parse_date(msg_obj["received_at"])
     for ds in thing["MultiDatastreams"]:
         values = []
@@ -222,7 +216,7 @@ def create_observations(thing, msg_obj, data):
         sta.create_observation(ds["@iot.id"], observation)
 
 
-def get_or_create_thing(msg_obj, data, check_metadata):
+def get_or_create_thing(sta, msg_obj, data, check_metadata):
     unique_id = make_thing_id(msg_obj)
 
     expand = "MultiDatastreams,MultiDatastreams/Sensor,MultiDatastreams/ObservedProperties"
@@ -515,6 +509,13 @@ def main():
     logging.info(
         "Connecting Redis to {} on port {}".format(redis_url.hostname, redis_url.port)
     )
+
+    sta = sensorthings.SensorThings(
+        url=os.environ["SENSORTHINGS_URL"],
+        username=os.environ.get("SENSORTHINGS_USER", None),
+        password=os.environ.get("SENSORTHINGS_PASSWORD", None),
+    )
+
     redis_server = redis.Redis(
         host=redis_url.hostname, port=redis_url.port, db=int(redis_url.path[1:] or 0), decode_responses=True,
     )
@@ -528,7 +529,7 @@ def main():
             for entry_id, message in messages:
                 messages_from = entry_id
                 try:
-                    process_message(entry_id, message)
+                    process_message(sta, entry_id, message)
                 # pylint: disable=broad-except
                 except Exception as ex:
                     logging.exception("Error processing message: %s", ex)
