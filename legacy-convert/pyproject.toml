@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "ttn-redis-decoder"
+name = "legacy-convert"
 version = "0.1.0"
 description = ""
 authors = ["Matthijs Kooijman <matthijs@stdin.nl>"]
