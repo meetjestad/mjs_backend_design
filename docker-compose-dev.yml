@@ -2,3 +2,4 @@
 include:
   - path:
      - docker-compose/base.yaml
+     - docker-compose/dev.yaml

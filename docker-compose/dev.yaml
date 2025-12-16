@@ -1,0 +1,15 @@
+---
+services:
+  # This mounts the current source code as a volume, replacing the
+  # source that was copied at build time. This means a container restart
+  # will immediately use the latest source code, without needing
+  # a rebuild, for faster development iteration.
+  ttn-to-redis:
+    volumes:
+     - ../ttn-to-redis:/code
+  ttn-save-msg:
+    volumes:
+     - ../ttn-save-msg:/code
+  legacy-convert:
+    volumes:
+     - ../legacy-convert:/code

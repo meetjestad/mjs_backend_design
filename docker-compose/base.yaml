@@ -1,0 +1,107 @@
+---
+services:
+  redis:
+    image: redis:8.2.2-alpine
+    restart: unless-stopped
+    ports:
+      # For testing scripts outside docker
+      - 127.0.0.1:63790:6379
+    volumes:
+      - redis-data:/data
+
+  timescale:
+    image: timescale/timescaledb:2.22.1-pg17
+    restart: unless-stopped
+    ports:
+      # For testing scripts outside docker
+      - 127.0.0.1:54320:5432
+    environment:
+      POSTGRES_PASSWORD: password
+    volumes:
+      - timescale-data:/var/lib/postgresql/data
+
+  ttn-to-redis:
+    build: ../ttn-to-redis
+    restart: unless-stopped
+    links:
+      - redis:redis
+    environment:
+      REDIS_URL: redis://redis:6379/0
+    env_file:
+     - ../secrets.env
+     - ../ttn-to-redis/config.env
+
+  ttn-save-msg:
+    build: ../ttn-save-msg
+    restart: unless-stopped
+    links:
+      - redis:redis
+      - timescale:timescale
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
+    env_file:
+     - ../ttn-save-msg/config.env
+
+  legacy-convert:
+    build: ../legacy-convert
+    restart: unless-stopped
+    links:
+      - redis:redis
+      - timescale:timescale
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
+      SENSORTHINGS_URL: http://frost-web:8080/FROST-Server/v1.1
+      SENSORTHINGS_USER: write
+    env_file:
+     - ../legacy-convert/config.env
+     - ../secrets.env
+
+  frost-web:
+    # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
+    image: fraunhoferiosb/frost-server:2.7.0-SNAPSHOT
+    environment:
+      # For all settings see: https://fraunhoferiosb.github.io/FROST-Server/settings/settings.html
+      #- serviceRootUrl=http://localhost:8081/sta
+      - plugins_multiDatastream.enable=true
+      - http_cors_enable=true
+      - http_cors_allowed_origins=*
+      - persistence_db_driver=org.postgresql.Driver
+      - persistence_db_url=jdbc:postgresql://frost-db:5432/frost
+      - persistence_db_username=frost
+      - persistence_db_password=some_password
+      - persistence_autoUpdateDatabase=true
+      - logSensitiveData=true
+      - auth_provider=de.fraunhofer.iosb.ilt.frostserver.auth.basic.BasicAuthProvider
+      - auth_allowAnonymousRead=true
+      - auth_db_driver=org.postgresql.Driver
+      - auth_db_url=jdbc:postgresql://frost-db:5432/frost
+      - auth_db_username=frost
+      - auth_db_password=some_password
+      - auth_autoUpdateDatabase=true
+    ports:
+      - 127.0.0.1:1883:1883
+      - 127.0.0.1:8080:8080
+    depends_on:
+      frost-db:
+        condition: service_healthy
+
+  frost-db:
+    image: postgis/postgis:17-3.5-alpine
+    environment:
+      - POSTGRES_DB=frost
+      - POSTGRES_USER=frost
+      - POSTGRES_PASSWORD=some_password
+    volumes:
+      - frost-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -d frost -U frost "]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+volumes:
+  frost-db-data:
+  redis-data:
+  timescale-data:
