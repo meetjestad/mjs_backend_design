@@ -533,10 +533,18 @@ def main():
     # multiple consumers (since we need messages to be in-order
     # usually), but since that allows explicit acking and deleting only
     # acked messages.
-    if not [g for g in redis_server.xinfo_groups(name=redis_stream_in) if g['name'] in redis_consumer_group]:
-        redis_server.xgroup_create(name=redis_stream_in, groupname=redis_consumer_group, id="0")
+    if redis_server.exists(redis_stream_in):
+        groups = redis_server.xinfo_groups(name=redis_stream_in)
+    else:
+        logging.info(f"Stream {redis_stream_in} does not exist yet, will be created along with consumer group")
+        groups = []
+    if not [g for g in groups if g['name'] in redis_consumer_group]:
+        logging.info(f"Creating consumer group {redis_consumer_group} for stream {redis_stream_in}")
+        redis_server.xgroup_create(name=redis_stream_in, groupname=redis_consumer_group, id="0", mkstream=True)
+
     # Since we expect only one consumer, use the group name as the consumer name
     redis_consumer_name = redis_consumer_group
+    logging.info(f"Using consumer {redis_consumer_name} in group {redis_consumer_group} for stream {redis_stream_in}")
 
     while True:
         # The special > id means "messages not seen by any consumer yet
