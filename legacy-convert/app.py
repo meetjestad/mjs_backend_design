@@ -6,6 +6,8 @@ import copy
 import json
 import logging
 import os
+import signal
+import sys
 from urllib.parse import urlparse
 import uuid
 
@@ -505,6 +507,12 @@ def make_meas_id(msg_id, chan_id):
 
 
 def main():
+    def terminate(sig, *args):
+        print(f"Received signal {sig}, terminating", flush=True)
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
+
     logging.basicConfig(level=logging.DEBUG, force=True)
 
     logging.info(
@@ -553,9 +561,6 @@ def main():
                     logging.exception("Error processing message: %s", ex)
 
 
-try:
-    main()
-except BaseException as e:
-    print(e)
+main()
 
 # vim: set sw=4 sts=4 expandtab:

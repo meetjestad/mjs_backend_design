@@ -5,6 +5,8 @@
 from datetime import datetime, timezone
 import logging
 import os
+import signal
+import sys
 from urllib.parse import urlparse
 
 import paho.mqtt.client as mqtt
@@ -26,6 +28,12 @@ def get_env_or_file(name, default=None):
 
 
 def main():
+    def terminate(sig, *args):
+        print(f"Received signal {sig}, terminating", flush=True)
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
+
     redis_url = urlparse(os.environ["REDIS_URL"])
     redis_stream = os.environ["REDIS_STREAM"]
     try:

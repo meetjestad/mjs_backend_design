@@ -3,6 +3,8 @@
 # pylint: disable=missing-docstring
 import logging
 import os
+import signal
+import sys
 from urllib.parse import urlparse
 
 import redis
@@ -84,6 +86,12 @@ def process_message(redis_server, entry_id, message):
 
 
 def main():
+    def terminate(sig, *args):
+        print(f"Received signal {sig}, terminating", flush=True)
+        sys.exit(0)
+    signal.signal(signal.SIGTERM, terminate)
+    signal.signal(signal.SIGINT, terminate)
+
     logging.basicConfig(level=logging.DEBUG)
 
     logging.info(
