@@ -1,18 +1,43 @@
-To run, you need to create a file called `secrets.env` in this directory
-with the needed credentials. e.g. something like:
+Meet je stad backend experiments
+================================
+This repository contains a proof of concept for the [Meet Je
+Stad](https://meetjestad.net) data backend, based on
+[CSDIF](https://csdif.info) (using SensorThings API and SensorML).
+
+This repository is based on docker compose, with different containers
+working together to ingest data from The Things Network, save raw
+messages into a postgresql database for archiving and decode the
+messages into a SensorThings server (using FROST-Server). The processing
+done by a few distinct python scripts, which communicate via redis
+streams.
+
+
+Initial setup
+-------------
+To run the stack, you can use the provided `docker-compose.yml` file.
+
+Before running, you need to set up some credentials.
+
+ 1. Create a file called `secrets.env` in the repository root containing
+    the credentials to receive data from TTN. e.g. something like:
 
 	TTN_APP_ID=meet-je-stad-test
-	TTN_ACCESS_KEY=ttn-account-v2.xxxxxxxxxxxxxxxxxxxxx
-	ME_CONFIG_BASICAUTH_USERNAME=root
-	ME_CONFIG_BASICAUTH_PASSWORD=some_password
+	TTN_ACCESS_KEY=NNSXS.xxxxxxxxxxxxxxxxxxxxx
 
-Here, the TTN credentials should be taken from the TTN console, whereas
-the ME (Mongo Express) credentials will be used to configure ME and can
-be used to login later.
+    Here, the TTN credentials should be taken from the TTN console.
 
-To start stuff:
+ 2. To set up authentication for the FROST Server, run this script
+    (normally before starting any containers, can also run after):
 
-	docker-compose up -d
+	./set-frost-passwords
+
+    This will start frost to create the users table, and then generate
+    random passwords for the users. The pw for the write user is saved
+    to secrets.env to be used by the other scripts.
+
+To then start everything, run:
+
+	docker compose up -d
 
 This creates a number of related docker containers, whose names are prefixed
 with the name of the current directory. On startup, the redis clients
@@ -20,22 +45,23 @@ will likely show some errors in the logs, since redis needs a few
 seconds to initialize and start, but they should recover automatically
 (and silently).
 
-To view logs, e.g. of the redis producer (TTN client):
+To view logs of various containers:
 
-	docker logs -f mjsbackenddesign_ttn-redis-producer_1
+	docker compose logs -f ttn-to-redis
+	docker compose logs -f ttn-save-message
+	docker compose logs -f legacy-convert
+	docker compose logs -f frost-web
+	docker compose logs -f frost-db
 
-Or of the the redis decoder (Mongodb writer):
+Accessing the API
+-----------------
+When started as above, the SensorThigns API is accessible below:
 
-	docker logs -f mjs_backend_design_ttn-redis-decoder_1
+   http://localhost:8080/FROST-Server/v1.1/O
 
-To view the data in a redis queue, you can run a commandline consumer inside the redis container:
+For example, to get a list of Things:
 
-	docker exec -it mjsbackenddesign_redis_1 redis-console-consumer --bootstrap-server localhost:6379 --topic ttndata.meet-je-stad-test
-
-Add `--from-beginning` to see all historical data, rather than just new data as it comes in.
-
-To view data in mongo, you can use the webinterface bound by docker to
-http://localhost:8081
+   http://localhost:8080/FROST-Server/v1.1/Things
 
 Updating containers
 -------------------
@@ -44,36 +70,60 @@ containers with:
 
 	docker-compose up -d --build
 
-If you just made changes to the docker-compose file or env files, you can omit
-`--build` and docker will recreate (if needed) the running container with the
-most recently build image.
+If you just made changes to the docker-compose file or env files (and
+not the code), you can omit `--build` and docker will recreate (if
+needed) the running container with the most recently build image.
 
 To rebuild just one container, add its name, e.g.:
 
-	docker-compose up -d --build ttn-redis-decoder
+	docker-compose up -d --build legacy-convert
 
-Note that currently the redis and elasticsearch images have no
-persistent storage set up, so recreating the redis image will remove
-data from the redis queues.
+Quick restarts during development
+---------------------------------
+When working on the python code, it is cumbersome and wasteful to
+rebuild the container images for every change.
 
-Running outside of docker
--------------------------
-During development, it can be useful to run some scripts outside of docker. To
-do so, a start script is provided that reads the same config as the docker
-version, or has its own config where needed. For example, to run the redis
-producer change into the `ttn-redis-producer` directory and run:
+Using a volume mount, the latest code can be inserted into an existing
+container without recreating or rebuilding it. This is already done in
+the `docker-compose-dev.yml` file. For example, when working on the
+`legacy-convert` application, you can run:
 
-	$ pip install -r requirements.txt
-	$ ./start
+	docker-compose -f docker-compose-dev.yml up legacy-convert
 
-This first installs the dependencies, and then runs the script. You
-might need to run pip with `sudo`, with `--user` or create and activate
-a virtualenv beforehand to make sure you can actually install the
-dependencies. You can also install the dependencies using OS packages
-(e.g. using apt) instead.
+If you run this while all containers are already running, this will
+replace (recreate) just this one container with the latest code. To then
+restart it with modified code, just quit it with ^C and then rerun the
+above command.
 
 Useful commands
 ---------------
 To delete all data in redis:
 
 	docker-compose exec redis redis-cli flushall
+
+To view new data streaming in two streams:
+
+    docker-compose exec redis redis-cli -r 99999 XREAD BLOCK 0 STREAMS ttn.meet-je-stad saved.ttn.meet-je-stad "$" "$"
+
+This has a small race condition because it reads one message at a time
+and then retries with -r starting at the the last message "$" every
+time, since redis-cli does not support proper streaming.
+
+To view all existing data in a single stream:
+
+    docker-compose exec redis redis-cli XREAD STREAMS ttn.meet-je-stad 0
+    docker-compose exec redis redis-cli XREAD STREAMS saved.ttn.meet-je-stad 0
+
+To see how many items there are in a stream:
+
+    docker-compose exec redis redis-cli XLEN ttn.meet-je-stad
+    docker-compose exec redis redis-cli XLEN saved.ttn.meet-je-stad
+
+To get messages pending in a consumer group (i.e. processing was
+attempted, but not finished or interrupted):
+
+    docker-compose exec redis redis-cli XPENDING saved.ttn.meet-je-stad legacy-convert
+
+Query the decoder database:
+
+    docker-compose exec timescale psql -U postgres postgres --command "SELECT * FROM rawmessage LIMIT 1;"
