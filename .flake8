@@ -1,0 +1,16 @@
+# This file is (since flake8 4.0) no longer treated as a special
+# user-config file, but since flake8 looks up the filesystem, it will be
+# used for any projects that live inside my homedir and do not have
+# their own flake8 config...
+
+# Update: Since flake8 5.0.0, this file will never be used, see
+# https://stackoverflow.com/a/71974264/740048
+
+[flake8]
+exclude = venv
+max-line-length = 119
+ignore =
+    # ambiguous variable name (e.g. l vs I)
+    E741
+    # line break before/after operator
+    W503 W504
