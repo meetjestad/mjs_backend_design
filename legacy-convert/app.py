@@ -214,9 +214,51 @@ def create_observations(sta, thing, msg_obj, data):
             "result": values,
             "phenomenonTime": time.isoformat(),
             "resultTime": time.isoformat(),
+            # TODO: Better go via the thing location, and/or GPS datastream,
+            # but for now just store whatever location is in the data packet
+            # directly.
+            "FeatureOfInterest": describe_feature_of_interest(lat=data["latitude"], lon=data["longitude"]),
         }
 
         sta.create_observation(ds["@iot.id"], observation)
+
+
+def describe_location_or_foi(lat, lon, is_location):
+    # Location and FeatureOfInterest have nearly the same schema
+    key = "location" if is_location else "feature"
+
+    # TODO: Reuse existing location if possible
+    if lat and lon:
+        return {
+            "name": f"{lat} / {lon}",
+            "description": "",
+            "encodingType": "application/geo+json",
+            key: {
+                "type": "Feature",
+                "geometry": {
+                    "type": "Point",
+                    "coordinates": [lon, lat],
+                },
+            },
+        }
+    else:
+        return {
+            "name": "Unknown location",
+            "description": "",
+            "encodingType": "application/geo+json",
+            key: {
+                "type": "Feature",
+                "geometry": None,
+            },
+        }
+
+
+def describe_location(lat, lon):
+    return describe_location_or_foi(lat=lat, lon=lon, is_location=True)
+
+
+def describe_feature_of_interest(lat, lon):
+    return describe_location_or_foi(lat=lat, lon=lon, is_location=False)
 
 
 def get_or_create_thing(sta, msg_obj, data, check_metadata):
@@ -453,30 +495,6 @@ def describe_thing(unique_id, msg_obj, data):
         ds["Sensor"]["metadata"]["uniqueId"] = f"urn:uuid:{uuid.uuid4()}"
 
     # TODO: Update location when it changes?
-    # TODO: Reuse existing location if possible
-    if data["latitude"] and data["longitude"]:
-        location = {
-            "name": f"{data['latitude']} / {data['longitude']}",
-            "description": "",
-            "encodingType": "application/geo+json",
-            "location": {
-                "type": "Feature",
-                "geometry": {
-                    "type": "Point",
-                    "coordinates": [data["longitude"], data["latitude"]]
-                },
-            },
-        }
-    else:
-        location = {
-            "name": "Unknown location",
-            "description": "",
-            "encodingType": "application/geo+json",
-            "location": {
-                "type": "Feature",
-                "geometry": None,
-            },
-        }
 
     return {
         "name": name,
@@ -487,7 +505,7 @@ def describe_thing(unique_id, msg_obj, data):
         },
         "MultiDatastreams": datastreams,
         "Locations": [
-            location,
+            describe_location(lat=data["latitude"], lon=data["longitude"])
         ],
     }
 
