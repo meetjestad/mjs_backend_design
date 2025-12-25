@@ -97,7 +97,7 @@ services:
       - frost-db-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d frost -U frost "]
-      interval: 2s
+      interval: 60s
       timeout: 2s
       retries: 10
 
