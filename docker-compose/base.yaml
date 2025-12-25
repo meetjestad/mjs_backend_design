@@ -61,6 +61,7 @@ services:
   frost-web:
     # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
     image: fraunhoferiosb/frost-server:2.7.0-SNAPSHOT
+    restart: unless-stopped
     environment:
       # For all settings see: https://fraunhoferiosb.github.io/FROST-Server/settings/settings.html
       #- serviceRootUrl=http://localhost:8081/sta
@@ -89,6 +90,7 @@ services:
 
   frost-db:
     image: postgis/postgis:17-3.5-alpine
+    restart: unless-stopped
     environment:
       - POSTGRES_DB=frost
       - POSTGRES_USER=frost
