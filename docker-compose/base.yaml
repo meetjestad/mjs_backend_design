@@ -100,6 +100,8 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -d frost -U frost "]
       interval: 60s
+      start_interval: 1s
+      start_period: 10s
       timeout: 2s
       retries: 10
 
