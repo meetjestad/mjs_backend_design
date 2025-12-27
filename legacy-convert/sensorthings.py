@@ -48,8 +48,14 @@ class QLiteral(QExpression):
     value: str | int | float | None
 
     def __str__(self):
-        # TODO: HACK: Strings with quotes now fail
-        return json.dumps(self.value).replace('"', "'")
+        if isinstance(self.value, str):
+            # Odata doubles quotes to escape
+            escaped = self.value.replace("'", "''")
+            return f"'{escaped}'"
+        else:
+            # This might return e.g. 1e-10 for floats, but that is
+            # supported notation for OData
+            return str(self.value)
 
 
 @dataclass
