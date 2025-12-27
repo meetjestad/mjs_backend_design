@@ -270,7 +270,7 @@ def get_or_create_location_or_foi(sta, lat, lon, is_location):
                 geometry = {
                     "type": "Point",
                     "coordinates": [round(lon, GPS_DIGITS), round(lat, GPS_DIGITS)],
-                },
+                }
             else:
                 geometry = None
 
@@ -281,7 +281,7 @@ def get_or_create_location_or_foi(sta, lat, lon, is_location):
                 key: {
                     "type": "Feature",
                     "geometry": geometry,
-                }
+                },
             }
             new_path = sta.create_object(path, content=data)
             obj = sta.get(path=new_path).json()
