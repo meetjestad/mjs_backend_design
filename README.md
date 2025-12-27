@@ -124,6 +124,10 @@ attempted, but not finished or interrupted):
 
     docker compose exec redis redis-cli XPENDING saved.ttn.meet-je-stad legacy-convert
 
+Get info about a stream, including the size of the queue ("length") and
+the number of pending (not acked) messages ("pel-length"):
+
+    docker compose exec redis redis-cli XINFO STREAM saved.ttn.meet-je-stad FULL COUNT 1
 
 Query the decoder database:
 
