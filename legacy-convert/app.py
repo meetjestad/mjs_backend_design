@@ -255,7 +255,7 @@ def get_or_create_location_or_foi(sta, lat, lon, is_location):
         # locations as well. Maybe also only merge locations / FOI per
         # thing?
         if lat and lon:
-            name = f"{lat:.{GPS_DIGITS}} / {lon:.{GPS_DIGITS}}"
+            name = f"{lat:.{GPS_DIGITS}f} / {lon:.{GPS_DIGITS}f}"
         else:
             name = "Unknown location"
 
