@@ -196,6 +196,9 @@ class SensorThings:
         return objs[0]
 
     def get_objects_filtered(self, path: str, filter: QExpression, expand: str = ""):
-        response = self.get(path=path, params={'$filter': str(filter), '$expand': expand})
+        params = {'$filter': str(filter)}
+        if expand:
+            params['$expand'] = expand
+        response = self.get(path=path, params=params)
 
         return response.json()['value']
