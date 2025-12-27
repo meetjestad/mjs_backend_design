@@ -68,7 +68,7 @@ Updating containers
 After you made changes to the code, you can rebuild the images and update the
 containers with:
 
-	docker-compose up -d --build
+	docker compose up -d --build
 
 If you just made changes to the docker-compose file or env files (and
 not the code), you can omit `--build` and docker will recreate (if
@@ -76,7 +76,7 @@ needed) the running container with the most recently build image.
 
 To rebuild just one container, add its name, e.g.:
 
-	docker-compose up -d --build legacy-convert
+	docker compose up -d --build legacy-convert
 
 Quick restarts during development
 ---------------------------------
@@ -88,7 +88,7 @@ container without recreating or rebuilding it. This is already done in
 the `docker-compose-dev.yml` file. For example, when working on the
 `legacy-convert` application, you can run:
 
-	docker-compose -f docker-compose-dev.yml up legacy-convert
+	docker compose -f docker-compose-dev.yml up legacy-convert
 
 If you run this while all containers are already running, this will
 replace (recreate) just this one container with the latest code. To then
@@ -99,11 +99,11 @@ Useful commands
 ---------------
 To delete all data in redis:
 
-	docker-compose exec redis redis-cli flushall
+	docker compose exec redis redis-cli flushall
 
 To view new data streaming in two streams:
 
-    docker-compose exec redis redis-cli -r 99999 XREAD BLOCK 0 STREAMS ttn.meet-je-stad saved.ttn.meet-je-stad "$" "$"
+    docker compose exec redis redis-cli -r 99999 XREAD BLOCK 0 STREAMS ttn.meet-je-stad saved.ttn.meet-je-stad "$" "$"
 
 This has a small race condition because it reads one message at a time
 and then retries with -r starting at the the last message "$" every
@@ -111,19 +111,20 @@ time, since redis-cli does not support proper streaming.
 
 To view all existing data in a single stream:
 
-    docker-compose exec redis redis-cli XREAD STREAMS ttn.meet-je-stad 0
-    docker-compose exec redis redis-cli XREAD STREAMS saved.ttn.meet-je-stad 0
+    docker compose exec redis redis-cli XREAD STREAMS ttn.meet-je-stad 0
+    docker compose exec redis redis-cli XREAD STREAMS saved.ttn.meet-je-stad 0
 
 To see how many items there are in a stream:
 
-    docker-compose exec redis redis-cli XLEN ttn.meet-je-stad
-    docker-compose exec redis redis-cli XLEN saved.ttn.meet-je-stad
+    docker compose exec redis redis-cli XLEN ttn.meet-je-stad
+    docker compose exec redis redis-cli XLEN saved.ttn.meet-je-stad
 
 To get messages pending in a consumer group (i.e. processing was
 attempted, but not finished or interrupted):
 
-    docker-compose exec redis redis-cli XPENDING saved.ttn.meet-je-stad legacy-convert
+    docker compose exec redis redis-cli XPENDING saved.ttn.meet-je-stad legacy-convert
+
 
 Query the decoder database:
 
-    docker-compose exec timescale psql -U postgres postgres --command "SELECT * FROM rawmessage LIMIT 1;"
+    docker compose exec timescale psql -U postgres postgres --command "SELECT * FROM rawmessage LIMIT 1;"
