@@ -138,7 +138,7 @@ class SensorThings:
     def delete(self, **kwargs):
         return self.request(method="DELETE", **kwargs)
 
-    def create_object(self, path: str, content: str | object, content_type: str):
+    def create_object(self, path: str, content: str | object, content_type: str = "application/json"):
         if isinstance(content, str):
             data = content
             json = None

@@ -217,48 +217,131 @@ def create_observations(sta, thing, msg_obj, data):
             # TODO: Better go via the thing location, and/or GPS datastream,
             # but for now just store whatever location is in the data packet
             # directly.
-            "FeatureOfInterest": describe_feature_of_interest(lat=data["latitude"], lon=data["longitude"]),
+            "FeatureOfInterest": get_or_create_feature_of_interest(sta, lat=data["latitude"], lon=data["longitude"]),
         }
 
         sta.create_observation(ds["@iot.id"], observation)
 
 
-def describe_location_or_foi(lat, lon, is_location):
-    # Location and FeatureOfInterest have nearly the same schema
-    key = "location" if is_location else "feature"
+location_foi_cache = {}
 
-    # TODO: Reuse existing location if possible
-    if lat and lon:
-        return {
-            "name": f"{lat} / {lon}",
-            "description": "",
-            "encodingType": "application/geo+json",
-            key: {
-                "type": "Feature",
-                "geometry": {
+
+def get_or_create_location_or_foi(sta, lat, lon, is_location):
+    cache_key = (lat, lon, is_location)
+
+    try:
+        return location_foi_cache[cache_key]
+    except KeyError:
+        # Display (and round to) 6 digits of precision, which is
+        # around 60*1852/1e6 = 11cm. We transmit in 15-bits fixed
+        # point, so we've already rounded to 60*1852/2**15 = 339 cm
+        # in transit.
+        # 6 digits should also be short enough to not run into float
+        # precision issues.
+        # TODO: Maybe use Decimal instead of floats (at the place where
+        # the packet is parsed already)?
+        GPS_DIGITS = 6
+
+        # Location and FeatureOfInterest have nearly the same schema
+        key = "location" if is_location else "feature"
+        path = "/Locations" if is_location else "/FeaturesOfInterest"
+
+        # This uses the name to retrieve an existing object for the same
+        # position. This is somewhat ugly, but does neatly sidestep
+        # issues with floating point inequality issues, or deciding what
+        # the threshold for equality using st_distance should be.
+        #
+        # TODO: Have some better way to merge multiple (nearby)
+        # locations as well. Maybe also only merge locations / FOI per
+        # thing?
+        if lat and lon:
+            name = f"{lat:.{GPS_DIGITS}} / {lon:.{GPS_DIGITS}}"
+        else:
+            name = "Unknown location"
+
+        objs = sta.get_objects_filtered(
+            path,
+            filter=QOp(QField('name'), QOperator.Eq, QLiteral(name)),
+        )
+
+        if not objs:
+            # Not found in cache and not found in db, create
+            if lat and lon:
+                geometry = {
                     "type": "Point",
-                    "coordinates": [lon, lat],
+                    "coordinates": [round(lon, GPS_DIGITS), round(lat, GPS_DIGITS)],
                 },
-            },
-        }
-    else:
-        return {
-            "name": "Unknown location",
-            "description": "",
-            "encodingType": "application/geo+json",
-            key: {
-                "type": "Feature",
-                "geometry": None,
-            },
-        }
+            else:
+                geometry = None
+
+            data = {
+                "name": name,
+                "description": "",
+                "encodingType": "application/geo+json",
+                key: {
+                    "type": "Feature",
+                    "geometry": geometry,
+                }
+            }
+            new_path = sta.create_object(path, content=data)
+            obj = sta.get(path=new_path).json()
+        elif len(objs) > 1:
+            logging.warning(f"{name}: Multiple {path[1:]} with same name, using first one")
+            obj = objs[0]
+        else:
+            obj = objs[0]
+
+        result = {"@iot.id": obj["@iot.id"]}
+        location_foi_cache[cache_key] = result
+        return result
 
 
-def describe_location(lat, lon):
-    return describe_location_or_foi(lat=lat, lon=lon, is_location=True)
+def get_or_create_location(sta, lat, lon):
+    return get_or_create_location_or_foi(sta, lat=lat, lon=lon, is_location=True)
 
 
-def describe_feature_of_interest(lat, lon):
-    return describe_location_or_foi(lat=lat, lon=lon, is_location=False)
+def get_or_create_feature_of_interest(sta, lat, lon):
+    return get_or_create_location_or_foi(sta, lat=lat, lon=lon, is_location=False)
+
+
+observed_property_cache = {}
+
+
+def get_or_create_observed_property(sta, props):
+    # Dicts are not hashable, so convert into a frozenset
+    # https://stackoverflow.com/a/1600806/740048
+    cache_key = frozenset(props.items())
+
+    try:
+        return observed_property_cache[cache_key]
+    except KeyError:
+        # TODO: This might select an existing object that has
+        # *additional* properties not asked for, but maybe that is ok?
+        # e.g. when (later) a station submits only a definition and not
+        # a name, this will reuse a property with whatever name if it
+        # already exists, which might be good?
+        filter = None
+        for key, value in props.items():
+            op = QOp(QField(key), QOperator.Eq, QLiteral(value))
+            if filter is None:
+                filter = op
+            else:
+                filter = QOp(filter, QOperator.And, op)
+
+        objs = sta.get_objects_filtered('/ObservedProperties', filter=filter)
+
+        if not objs:
+            new_path = sta.create_object('/ObservedProperties', content=props)
+            obj = sta.get(path=new_path).json()
+        elif len(objs) > 1:
+            logging.warning(f"Multiple ObservedProperties with same values ({props}), using first one")
+            obj = objs[0]
+        else:
+            obj = objs[0]
+
+        result = {"@iot.id": obj["@iot.id"]}
+        observed_property_cache[cache_key] = result
+        return result
 
 
 def get_or_create_thing(sta, msg_obj, data, check_metadata):
@@ -286,7 +369,7 @@ def get_or_create_thing(sta, msg_obj, data, check_metadata):
 
     new_thing = None
     if thing is None or check_metadata:
-        new_thing = describe_thing(unique_id, msg_obj, data)
+        new_thing = describe_thing(sta, unique_id, msg_obj, data)
 
     if thing is None:
         logging.info(f"{unique_id}: No Thing found")
@@ -324,7 +407,7 @@ def thing_changed(old, new):
     )
 
 
-def describe_thing(unique_id, msg_obj, data):
+def describe_thing(sta, unique_id, msg_obj, data):
     """ Generate metadata for a thing based on a decoded data message. """
 
     name = msg_obj["end_device_ids"]["device_id"]
@@ -411,16 +494,16 @@ def describe_thing(unique_id, msg_obj, data):
             },
         },
         "ObservedProperties": [
-            {
+            get_or_create_observed_property(sta, {
                 "name": "temperature",
                 "definition": "http://qudt.org/vocab/quantitykind/Temperature",
                 "description": "Temperature"
-            },
-            {
+            }),
+            get_or_create_observed_property(sta, {
                 "name": "humidity",
                 "definition": "http://qudt.org/vocab/quantitykind/RelativeHumidity",
                 "description": "Humidity"
-            },
+            }),
         ],
     })
 
@@ -455,16 +538,16 @@ def describe_thing(unique_id, msg_obj, data):
                 },
             },
             "ObservedProperties": [
-                {
+                get_or_create_observed_property(sta, {
                     "name": "PM2.5",
                     "definition": "https://qudt.org/vocab/quantitykind/MassDensity",
                     "description": "Particulate Matter density in ambient air, particle size < 2.5μm",
-                },
-                {
+                }),
+                get_or_create_observed_property(sta, {
                     "name": "PM10",
                     "definition": "https://qudt.org/vocab/quantitykind/MassDensity",
                     "description": "Particulate Matter density in ambient air, particle size < 10μm",
-                },
+                }),
             ],
         }
 
@@ -505,7 +588,7 @@ def describe_thing(unique_id, msg_obj, data):
         },
         "MultiDatastreams": datastreams,
         "Locations": [
-            describe_location(lat=data["latitude"], lon=data["longitude"])
+            get_or_create_location(sta, lat=data["latitude"], lon=data["longitude"])
         ],
     }
 
