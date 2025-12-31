@@ -198,15 +198,16 @@ def decode_uplink(sta, msg_obj, port, payload):
 
 def create_observations(sta, thing, msg_obj, data):
     time = parse_date(msg_obj["received_at"])
+    lookup = {
+        "temperature": "temperature",
+        "humidity": "humidity",
+        "PM10": "pm10",
+        "PM2.5": "pm2_5",
+    }
+
     for ds in thing["MultiDatastreams"]:
         values = []
         for prop in ds["ObservedProperties"]:
-            lookup = {
-                "temperature": "temperature",
-                "humidity": "humidity",
-                "PM10": "pm10",
-                "PM2.5": "pm2_5",
-            }
             data_name = lookup[prop["name"]]
             values.append(data[data_name])
 
@@ -220,7 +221,24 @@ def create_observations(sta, thing, msg_obj, data):
             "FeatureOfInterest": get_or_create_feature_of_interest(sta, lat=data["latitude"], lon=data["longitude"]),
         }
 
-        sta.create_observation(ds["@iot.id"], observation)
+        sta.create_observation('MultiDatastreams', ds["@iot.id"], observation)
+
+    for ds in thing["Datastreams"]:
+        prop = ds["ObservedProperty"]
+        data_name = lookup[prop["name"]]
+        value = data[data_name]
+
+        observation = {
+            "result": value,
+            "phenomenonTime": time.isoformat(),
+            "resultTime": time.isoformat(),
+            # TODO: Better go via the thing location, and/or GPS datastream,
+            # but for now just store whatever location is in the data packet
+            # directly.
+            "FeatureOfInterest": get_or_create_feature_of_interest(sta, lat=data["latitude"], lon=data["longitude"]),
+        }
+
+        sta.create_observation('Datastreams', ds["@iot.id"], observation)
 
 
 location_foi_cache = {}
@@ -347,7 +365,10 @@ def get_or_create_observed_property(sta, props):
 def get_or_create_thing(sta, msg_obj, data, check_metadata):
     unique_id = make_thing_id(msg_obj)
 
-    expand = "MultiDatastreams,MultiDatastreams/Sensor,MultiDatastreams/ObservedProperties"
+    expand = (
+        "MultiDatastreams,MultiDatastreams/Sensor,MultiDatastreams/ObservedProperties,"
+        + "Datastreams,Datastreams/Sensor,Datastreams/ObservedProperty"
+    )
 
     objs = sta.get_objects_filtered(
         '/Things',
@@ -451,111 +472,14 @@ def describe_thing(sta, unique_id, msg_obj, data):
 
     datastreams = []
 
-    datastreams.append({
-        "name": "Si7021 output",
-        "description": "",
-        "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_ComplexObservation",
-        "multiObservationDataTypes": [
-            "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
-            "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
-        ],
-        "unitOfMeasurements": [
-            {
-                "name": "degree Celcius",
-                "symbol": "°C",
-                "definition": "ucum:Cel",
-            },
-            {
-                "name": "percent",
-                "symbol": "%",
-                "definition": "ucum:%"
-            },
-        ],
-        "Sensor": {
-            "name": "Si7021",
-            "description": "Silicon Labs Si7021 temperature and humidity sensor",
-            "encodingType": "application/vnd.ogc.sml+json",
-            "metadata": {
-                "type": "PhysicalComponent",
-                "definition": "http://www.w3.org/ns/sosa/Sensor",
-                "identifiers": [
-                    {
-                        "definition": "http://sensorml.com/ont/swe/property/Manufacturer",
-                        "label": "Manufacturer Name",
-                        "value": "Silicon Labs"
-                    },
-                    {
-                        "definition": "http://sensorml.com/ont/swe/property/ModelNumber",
-                        "label": "Model Number",
-                        "value": "Si7021"
-                        # TODO: Could also be HTU21D
-                    },
-                ],
-            },
-        },
-        "ObservedProperties": [
-            get_or_create_observed_property(sta, {
-                "name": "temperature",
-                "definition": "http://qudt.org/vocab/quantitykind/Temperature",
-                "description": "Temperature"
-            }),
-            get_or_create_observed_property(sta, {
-                "name": "humidity",
-                "definition": "http://qudt.org/vocab/quantitykind/RelativeHumidity",
-                "description": "Humidity"
-            }),
-        ],
-    })
-
-    if "pm10" in data:
-        pm_datastream = {
-            "name": "Particulate matter",
-            "description": "",
-            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_ComplexObservation",
-            "multiObservationDataTypes": [
-                "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
-                "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
-            ],
-            "unitOfMeasurements": [
-                {
-                    "name": "degree Celcius",
-                    "symbol": "°C",
-                    "definition": "ucum:Cel",
-                },
-                {
-                    "name": "percent",
-                    "symbol": "%",
-                    "definition": "ucum:%"
-                },
-            ],
-            "Sensor": {
-                "name": "Particulate matter sensor",
-                "description": "Probably SDS11 or SPS30",
-                "encodingType": "application/vnd.ogc.sml+json",
-                "metadata": {
-                    "type": "PhysicalComponent",
-                    "definition": "http://www.w3.org/ns/sosa/Sensor",
-                },
-            },
-            "ObservedProperties": [
-                get_or_create_observed_property(sta, {
-                    "name": "PM2.5",
-                    "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=2.5",
-                    "description": "Particulate Matter density in ambient air, particle size < 2.5μm",
-                }),
-                get_or_create_observed_property(sta, {
-                    "name": "PM10",
-                    "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=10",
-                    "description": "Particulate Matter density in ambient air, particle size < 10μm",
-                }),
-            ],
-        }
-
-        # TODO: More conditions on FW version and extra fields
-        if is_mjs2020 and True:
-            pm_datastream["Sensor"]["name"] = "SPS30"
-            pm_datastream["Sensor"]["description"] = "Sensirion SPS30 Particulate matter sensor"
-            pm_datastream["Sensor"]["metadata"]["identifiers"] = [
+    si7021 = {
+        "name": "Si7021",
+        "description": "Silicon Labs Si7021 temperature and humidity sensor",
+        "encodingType": "application/vnd.ogc.sml+json",
+        "metadata": {
+            "type": "PhysicalComponent",
+            "definition": "http://www.w3.org/ns/sosa/Sensor",
+            "identifiers": [
                 {
                     "definition": "http://sensorml.com/ont/swe/property/Manufacturer",
                     "label": "Manufacturer Name",
@@ -565,11 +489,110 @@ def describe_thing(sta, unique_id, msg_obj, data):
                     "definition": "http://sensorml.com/ont/swe/property/ModelNumber",
                     "label": "Model Number",
                     "value": "Si7021"
+                    # TODO: Could also be HTU21D
                 },
             ],
-            # TODO: Extra fields
-        datastreams.append(pm_datastream)
+        },
+    }
 
+    datastreams.append({
+        "name": "Si7021 temperature",
+        "description": "",
+        "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+        "unitOfMeasurement": {
+            "name": "degree Celcius",
+            "symbol": "°C",
+            "definition": "ucum:Cel",
+        },
+        "Sensor": si7021,
+        "ObservedProperty": get_or_create_observed_property(sta, {
+            "name": "temperature",
+            "definition": "http://qudt.org/vocab/quantitykind/Temperature",
+            "description": "Temperature"
+        }),
+    })
+
+    datastreams.append({
+        "name": "Si7021 humidity",
+        "description": "",
+        "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+        "unitOfMeasurement": {
+            "name": "percent",
+            "symbol": "%",
+            "definition": "ucum:%"
+        },
+        "Sensor": si7021,
+        "ObservedProperty": get_or_create_observed_property(sta, {
+            "name": "humidity",
+            "definition": "http://qudt.org/vocab/quantitykind/RelativeHumidity",
+            "description": "Humidity"
+        }),
+    })
+
+    pm_sensor = {
+        "name": "Particulate matter sensor",
+        "description": "Probably SDS11 or SPS30",
+        "encodingType": "application/vnd.ogc.sml+json",
+        "metadata": {
+            "type": "PhysicalComponent",
+            "definition": "http://www.w3.org/ns/sosa/Sensor",
+        },
+    }
+
+    # TODO: More conditions on FW version and extra fields
+    if is_mjs2020 and True:
+        pm_sensor["name"] = "SPS30"
+        pm_sensor["description"] = "Sensirion SPS30 Particulate matter sensor"
+        pm_sensor["metadata"]["identifiers"] = [
+            {
+                "definition": "http://sensorml.com/ont/swe/property/Manufacturer",
+                "label": "Manufacturer Name",
+                "value": "Silicon Labs"
+            },
+            {
+                "definition": "http://sensorml.com/ont/swe/property/ModelNumber",
+                "label": "Model Number",
+                "value": "Si7021"
+            },
+        ],
+
+    if "pm2_5" in data:
+        datastreams.append({
+            "name": "Particulate matter PM2.5",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "microgram per cubic meter",
+                "symbol": "μg/m3",
+                "definition": "ucum:ug.m-3",
+            },
+            "Sensor": pm_sensor,
+            "ObservedProperty": get_or_create_observed_property(sta, {
+                "name": "PM10",
+                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=10",
+                "description": "Particulate Matter density in ambient air, particle size < 10μm",
+            }),
+        })
+
+    if "pm10" in data:
+        datastreams.append({
+            "name": "Particulate matter PM10",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "microgram per cubic meter",
+                "symbol": "μg/m3",
+                "definition": "ucum:ug.m-3",
+            },
+            "Sensor": pm_sensor,
+            "ObservedProperty": get_or_create_observed_property(sta, {
+                "name": "PM2.5",
+                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=2.5",
+                "description": "Particulate Matter density in ambient air, particle size < 2.5μm",
+            }),
+        })
+
+    # TODO: Extra PM fields
     # TODO: Lux, battery, supply, location
     # TODO: Reuse existing Sensor objects if possible?
 
@@ -586,7 +609,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
             "encodingType": "application/sml+json",
             "metadata": metadata,
         },
-        "MultiDatastreams": datastreams,
+        "Datastreams": datastreams,
         "Locations": [
             get_or_create_location(sta, lat=data["latitude"], lon=data["longitude"])
         ],

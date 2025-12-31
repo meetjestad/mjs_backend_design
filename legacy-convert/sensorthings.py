@@ -160,8 +160,8 @@ class SensorThings:
     def create_system(self, content: str | object, content_type: str):
         return self.create_object("/systems", content, content_type)
 
-    def create_observation(self, multidatastream_id: int, content: str | object):
-        path = f"/MultiDatastreams({multidatastream_id})/Observations"
+    def create_observation(self, path, ds_id: int, content: str | object):
+        path = f"/{path}({ds_id})/Observations"
         return self.create_object(path, content, content_type="application/json")
 
     def create_thing(self, thing):
