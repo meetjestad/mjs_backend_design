@@ -568,9 +568,9 @@ def describe_thing(sta, unique_id, msg_obj, data):
             },
             "Sensor": pm_sensor,
             "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "PM10",
-                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=10",
-                "description": "Particulate Matter density in ambient air, particle size < 10μm",
+                "name": "PM2.5",
+                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=2.5",
+                "description": "Particulate Matter density in ambient air, particle size < 2.5μm",
             }),
         })
 
@@ -586,9 +586,9 @@ def describe_thing(sta, unique_id, msg_obj, data):
             },
             "Sensor": pm_sensor,
             "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "PM2.5",
-                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=2.5",
-                "description": "Particulate Matter density in ambient air, particle size < 2.5μm",
+                "name": "PM10",
+                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=10",
+                "description": "Particulate Matter density in ambient air, particle size < 10μm",
             }),
         })
 
