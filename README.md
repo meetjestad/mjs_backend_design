@@ -21,15 +21,15 @@ Before running, you need to set up some credentials.
  1. Create a file called `secrets.env` in the repository root containing
     the credentials to receive data from TTN. e.g. something like:
 
-	TTN_APP_ID=meet-je-stad-test
-	TTN_ACCESS_KEY=NNSXS.xxxxxxxxxxxxxxxxxxxxx
+		TTN_APP_ID=meet-je-stad-test
+		TTN_ACCESS_KEY=NNSXS.xxxxxxxxxxxxxxxxxxxxx
 
     Here, the TTN credentials should be taken from the TTN console.
 
  2. To set up authentication for the FROST Server, run this script
     (normally before starting any containers, can also run after):
 
-	./set-frost-passwords
+		./set-frost-passwords
 
     This will start frost to create the users table, and then generate
     random passwords for the users. The pw for the write user is saved
