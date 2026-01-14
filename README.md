@@ -21,7 +21,7 @@ Before running, you need to set up some credentials.
  1. Create a file called `secrets.env` in the repository root containing
     the credentials to receive data from TTN. e.g. something like:
 
-		TTN_APP_ID=meet-je-stad-test
+		TTN_APP_ID=meet-je-stad
 		TTN_ACCESS_KEY=NNSXS.xxxxxxxxxxxxxxxxxxxxx
 
     Here, the TTN credentials should be taken from the TTN console.
