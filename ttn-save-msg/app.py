@@ -26,6 +26,7 @@ except KeyError:
 
 db.init(database_url)
 
+publish_count = 0
 
 def delete_if_exists(entity, **kwargs):
     # This runs a DELETE query without creating an instance. This bypasses the
@@ -59,6 +60,12 @@ def process_message(redis_server, entry_id, message):
     orm.commit()
     logging.debug("Saved message with id %s", raw_msg.id)
 
+    # Work around https://github.com/redis/redis/issues/14656
+    approximate = True
+    publish_count += 1
+    if publish_count % redis_maxlen == 0:
+        approximate = False
+
     try:
         redis_server.xadd(
             redis_stream_out,
@@ -74,7 +81,7 @@ def process_message(redis_server, entry_id, message):
             # removes messages that were acked by all consumer
             # groups.
             maxlen=redis_maxlen,
-            approximate=True,
+            approximate=approximate,
             ref_policy="ACKED",
         )
         logging.debug("Forwarded message to stream %s", redis_stream_out)

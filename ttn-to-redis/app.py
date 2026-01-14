@@ -26,6 +26,7 @@ def get_env_or_file(name, default=None):
                 raise KeyError(name)
             return default
 
+publish_count = 0
 
 def main():
     def terminate(sig, *args):
@@ -54,6 +55,12 @@ def main():
     def on_message(client, userdata, msg):
         logging.debug("Received message on topic %s: %s", msg.topic, str(msg.payload))
 
+        # Work around https://github.com/redis/redis/issues/14656
+        approximate = True
+        publish_count += 1
+        if publish_count % redis_maxlen == 0:
+            approximate = False
+
         try:
             redis_server.xadd(
                 redis_stream,
@@ -67,7 +74,7 @@ def main():
                 # removes messages that were acked by all consumer
                 # groups.
                 maxlen=redis_maxlen,
-                approximate=True,
+                approximate=approximate,
                 ref_policy="ACKED",
             )
         except Exception as e:
