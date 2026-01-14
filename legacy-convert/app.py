@@ -198,11 +198,16 @@ def decode_uplink(sta, msg_obj, port, payload):
 
 def create_observations(sta, thing, msg_obj, data):
     time = parse_date(msg_obj["received_at"])
+
+    # lookup: map ObservedProperty/name to data dict_key
     lookup = {
         "temperature": "temperature",
         "humidity": "humidity",
         "PM10": "pm10",
         "PM2.5": "pm2_5",
+        "illuminance": "lux",
+        "battery_voltage": "battery",
+        "supply_voltage": "supply",
     }
 
     for ds in thing["MultiDatastreams"]:
@@ -593,12 +598,99 @@ def describe_thing(sta, unique_id, msg_obj, data):
         })
 
     # TODO: Extra PM fields
-    # TODO: Lux, battery, supply, location
+
+    # lux - illuminance:
+    # https://meetjestad.net/en/Experiment_-_Light_sensor_comparison_at_Geophysics_Institute_Bergen
+    # https://meetjestad.net/static/graphs/light/
+    bpw34 = {
+        "name": "BPW34",
+        "description": "Vishay BPW34 Photodiode",
+        "encodingType": "application/vnd.ogc.sml+json",
+        "metadata": {
+            "type": "PhysicalComponent",
+            "definition": "http://www.w3.org/ns/sosa/Sensor",
+            "identifiers": [
+                {
+                    "definition": "http://sensorml.com/ont/swe/property/Manufacturer",
+                    "label": "Manufacturer Name",
+                    "value": "Vishay"
+                },
+                {
+                    "definition": "http://sensorml.com/ont/swe/property/ModelNumber",
+                    "label": "Model Number",
+                    "value": "BPW34"
+                },
+            ],
+        },
+    }
+    if "lux" in data:
+        datastreams.append({
+            "name": "BPW34 illuminance",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "lux",
+                "symbol": "lx",
+                "definition": "ucum:lx"
+            },
+            "Sensor": bpw34,
+            "ObservedProperty": get_or_create_observed_property(sta, {
+                "name": "illuminance",
+                "definition": "http://qudt.org/vocab/quantitykind/LuminousFluxPerArea",
+                "description": "Luminous Flux per Area"
+            }),
+        })
+
+    mjs_arduino = {
+        "name": "Internal ADC",
+        "description": "Internal ADC",
+        "encodingType": "application/vnd.ogc.sml+json",
+        "metadata": {},
+    }
+
+    if "battery" in data:
+        datastreams.append({
+            "name": "Battery voltage",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "volt",
+                "symbol": "V",
+                "definition": "ucum:V"
+            },
+            "Sensor": mjs_arduino,
+            "ObservedProperty": get_or_create_observed_property(sta, {
+                "name": "battery_voltage",
+                "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=battery",
+                "description": "Battery Voltage"
+            }),
+        })
+
+    if "supply" in data:
+        datastreams.append({
+            "name": "Supply voltage",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "volt",
+                "symbol": "V",
+                "definition": "ucum:V"
+            },
+            "Sensor": mjs_arduino,
+            "ObservedProperty": get_or_create_observed_property(sta, {
+                "name": "supply_voltage",
+                "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=supply",
+                "description": "Supply Voltage"
+            }),
+        })
+    # TODO: location
+
     # TODO: Reuse existing Sensor objects if possible?
 
     for ds in datastreams:
-        ds["Sensor"]["metadata"]["label"] = ds["Sensor"]["description"]
-        ds["Sensor"]["metadata"]["uniqueId"] = f"urn:uuid:{uuid.uuid4()}"
+        if "metadata" in ds.get("Sensor", {}):
+            ds["Sensor"]["metadata"]["label"] = ds["Sensor"]["description"]
+            ds["Sensor"]["metadata"]["uniqueId"] = f"urn:uuid:{uuid.uuid4()}"
 
     # TODO: Update location when it changes?
 
