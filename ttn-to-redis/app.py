@@ -68,7 +68,7 @@ def main():
                     "msg": msg.payload,
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                     "topic": msg.topic,
-                    "src": "ttn",
+                    "src": "ttn.v3",
                 },
                 # This trims the stream to the given length, but only
                 # removes messages that were acked by all consumer
