@@ -95,6 +95,43 @@ replace (recreate) just this one container with the latest code. To then
 restart it with modified code, just quit it with ^C and then rerun the
 above command.
 
+Importing or replaying older messages
+-------------------------------------
+The ttn-utility tool can be used to do some maintenance, currently only
+importing messages from file, or replaying messages from the db where they are
+stored.
+
+This utility is also contained in a docker compose container, which is not
+started by default, but can be started explicitly:
+
+```
+docker compose -f docker-compose-dev.yml run ttn-utility --help
+```
+
+To import messages from file (zstd-encoded tab-separated values as exported from the current production mysql db):
+
+```
+docker compose -f docker-compose-dev.yml run --volume ./data:/data ttn-utility import-from-file /data/file.tsv.zstd
+```
+
+This queues messages into redis, expecting them to be processed by
+ttn-save-msg. Currently there is no good mechanism for backpressure, which can
+leead to very big redis queues. The utility will wait if the first queue fills
+up, but if ttn-save-msg can keep up, but legacy-convert lags behind, the second
+queue can still fill up. A current workaround is to modify ttn-save-msg to not
+forward message to the second queue, but instead use a manual db replay
+afterwards.
+
+Since legacy-convert does not handle messages it has seen before (it assumes it sees only new messages in chronological order), you should currently clear out the FROST db before replaying messages. For example:
+
+```
+docker compose down frost-db frost-web -v
+./set-frost-passwords
+docker compose -f docker-compose-dev.yml run ttn-utility replay-from-db --start-date 2024-11-29 --end-date 2024-11-30
+```
+
+This readds older messages to the redis stream, to be processed by legacy convert.
+
 Useful commands
 ---------------
 To delete all data in redis:
@@ -122,11 +159,13 @@ To see how many items there are in a stream:
 To get messages pending in a consumer group (i.e. processing was
 attempted, but not finished or interrupted):
 
+    docker compose exec redis redis-cli XPENDING ttn.meet-je-stad legacy-convert
     docker compose exec redis redis-cli XPENDING saved.ttn.meet-je-stad legacy-convert
 
 Get info about a stream, including the size of the queue ("length") and
 the number of pending (not acked) messages ("pel-length"):
 
+    docker compose exec redis redis-cli XINFO STREAM ttn.meet-je-stad FULL COUNT 1
     docker compose exec redis redis-cli XINFO STREAM saved.ttn.meet-je-stad FULL COUNT 1
 
 Query the decoder database:

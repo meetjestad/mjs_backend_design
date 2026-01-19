@@ -41,6 +41,7 @@ def delete_if_exists(entity, **kwargs):
 
 @orm.db_session
 def process_message(redis_server, entry_id, message):
+    global publish_count
     ttn_msg = message['msg']
     src = message['src']
     topic = message['topic']

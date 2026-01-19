@@ -13,3 +13,6 @@ services:
   legacy-convert:
     volumes:
      - ../legacy-convert:/code
+  ttn-utility:
+    volumes:
+     - ../ttn-utility:/code
