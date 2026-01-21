@@ -180,9 +180,12 @@ def decode_uplink(sta, msg_obj, port, payload):
             value = stream.read(bits).uint
             extra_value.append(value)
 
-        data['extra'] = extra_value
+        data["extra"] = extra_value
     else:
-        data['extra'] = []
+        data["extra"] = []
+
+    if data["extra"]:
+        process_extra(data)
 
     # TODO: Maybe only check when framecount lowered or a new session
     # was started?
@@ -196,18 +199,105 @@ def decode_uplink(sta, msg_obj, port, payload):
     create_observations(sta, thing, msg_obj, data)
 
 
+def process_extra(data):
+    # keep original for whatever reason
+    extra = list(data.get("extra", []))
+    firmware = data.get("firmware_version", None)
+
+    def try_sps30(extra, data):
+        # read SPS30(9 values), compatble with firmware v5, v6, v7.
+        if len(extra) < 9:
+            return
+
+        if "pm2_5" not in data and all(x == 0 for x in extra[0:9]):
+            # If no valid data was received from the sensor, the firmware omits the PM flag and values, but still
+            # sends zeroes in the extra field.
+            del extra[0:9]
+            return
+
+        # validate: compare already set pm2_5 and pm10,
+        # they are not in float but in int, this might be +1 due to float to int casting on arduino.
+        if data["pm2_5"] != int(extra[1] / 10) and data["pm2_5"] + 1 != int(extra[1] / 10):
+            logging.warning(
+                "try_sps30(): SPS30 Validation FAILED, pm2_5 value doesn't match! data: %s",
+                data,
+            )
+            return
+
+        if data["pm10"] != int(extra[3] / 10) and data["pm10"] + 1 != int(extra[3] / 10):
+            logging.warning(
+                "try_sps30(): SPS30 Validation FAILED, pm10 value doesn't match! data: %s",
+                data,
+            )
+            return
+
+        data["pm1"] = extra.pop() / 10
+        data["pm2_5"] = extra.pop() / 10
+        data["pm4"] = extra.pop() / 10
+        data["pm10"] = extra.pop() / 10
+
+        data["pn1"] = extra.pop() / 10
+        data["pn2_5"] = extra.pop() / 10
+        data["pn4"] = extra.pop() / 10
+        data["pn10"] = extra.pop() / 10
+
+        # typical particle size in micrometer.
+        data["tps"] = extra.pop()
+
+        data["is_sps30"] = True
+
+    def try_vsolar(extra, data):
+        # read Vsolar in mv, compatible with firmware v5, v6, v7.
+        if len(extra) >= 1:
+            data["vsolar"] = extra.pop() / 1000
+
+    # firmware 5,6,7: extra = [ SPS30(9)? + VSOLAR(1)? ]
+    # https://github.com/meetjestad/mjs_firmware/blob/v7/mjs_firmware.ino#L693-L714
+    # https://github.com/meetjestad/mjs_firmware/blob/v6/mjs_firmware.ino#L693-L714
+    # https://github.com/meetjestad/mjs_firmware/blob/v5/mjs_firmware.ino#L693-L714
+    # extra may contain:
+    # - 9 values for SPS30
+    # - 1 value for vsolar
+    if firmware in [5,6,7]:
+        logging.debug("Extra firmware: %s (SPS30(9)? + VSOLAR(1)?): %s", firmware, extra)
+        try_sps30(extra, data)
+        try_vsolar(extra, data)
+        if extra:
+            logging.warning(
+                "Extra unexpected unparsed data in extra: %s, firmware: %s",
+                extra,
+                firmware,
+            )
+    else:
+        logging.info(
+            "Extra firmware: %s (#TODO! this firmware is not parsed) %s", firmware, extra
+        )
+
+    logging.debug(
+        "Extra firmware: %s, data: %s", data.get("firmware_version", None), data
+    )
+
+
 def create_observations(sta, thing, msg_obj, data):
     time = parse_date(msg_obj["received_at"])
 
     # lookup: map ObservedProperty/name to data dict_key
     lookup = {
-        "temperature": "temperature",
-        "humidity": "humidity",
-        "PM10": "pm10",
-        "PM2.5": "pm2_5",
-        "illuminance": "lux",
-        "battery_voltage": "battery",
-        "supply_voltage": "supply",
+        "Temperature": "temperature",
+        "Humidity": "humidity",
+        "Particulate matter PM1 density": "pm1",
+        "Particulate matter PM2.5 density": "pm2_5",
+        "Particulate matter PM4 density": "pm4",
+        "Particulate matter PM10 density": "pm10",
+        "Particulate matter PM1 count": "pn1",
+        "Particulate matter PM2.5 count": "pn2_5",
+        "Particulate matter PM4 count": "pn4",
+        "Particulate matter PM10 count": "pn10",
+        "Particulate matter typical particle size": "tps",
+        "Illuminance": "lux",
+        "Battery voltage": "battery",
+        "Supply voltage": "supply",
+        "Solar voltage": "vsolar",
     }
 
     for ds in thing["MultiDatastreams"]:
@@ -476,7 +566,6 @@ def describe_thing(sta, unique_id, msg_obj, data):
         model = "MJS2016"
     elif station_num > 2000 and station_num < 3000:
         model = "MJS2020"
-        is_mjs2020 = True
     else:
         model = None
 
@@ -523,7 +612,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
         },
         "Sensor": si7021,
         "ObservedProperty": get_or_create_observed_property(sta, {
-            "name": "temperature",
+            "name": "Temperature",
             "definition": "http://qudt.org/vocab/quantitykind/Temperature",
             "description": "Temperature"
         }),
@@ -540,7 +629,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
         },
         "Sensor": si7021,
         "ObservedProperty": get_or_create_observed_property(sta, {
-            "name": "humidity",
+            "name": "Humidity",
             "definition": "http://qudt.org/vocab/quantitykind/RelativeHumidity",
             "description": "Humidity"
         }),
@@ -556,60 +645,100 @@ def describe_thing(sta, unique_id, msg_obj, data):
         },
     }
 
-    # TODO: More conditions on FW version and extra fields
-    if is_mjs2020 and True:
+    # make pm_sensor more specific for is_sps30
+    if "is_sps30" in data:
         pm_sensor["name"] = "SPS30"
         pm_sensor["description"] = "Sensirion SPS30 Particulate matter sensor"
         pm_sensor["metadata"]["identifiers"] = [
             {
                 "definition": "http://sensorml.com/ont/swe/property/Manufacturer",
                 "label": "Manufacturer Name",
-                "value": "Silicon Labs"
+                "value": "Silicon Labs",
             },
             {
                 "definition": "http://sensorml.com/ont/swe/property/ModelNumber",
                 "label": "Model Number",
-                "value": "Si7021"
+                "value": "SPS30",
             },
-        ],
+        ]
 
+    def datastream_pm_density(size):
+        return {
+            "name": f"Particulate matter PM{size} density",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "microgram per cubic meter",
+                "symbol": "μg/m3",
+                "definition": "ucum:ug.m-3",
+            },
+            "Sensor": pm_sensor,
+            "ObservedProperty": get_or_create_observed_property(
+                sta,
+                {
+                    "name": f"Particulate matter PM{size} density",
+                    "definition": f"https://qudt.org/vocab/quantitykind/MassDensity#pm_size={size}",
+                    "description": f"Particulate matter density in ambient air, particle size < {size}μm",
+                },
+            ),
+        }
+
+    if "pm1" in data:
+        datastreams.append(datastream_pm_density(1))
     if "pm2_5" in data:
-        datastreams.append({
-            "name": "Particulate matter PM2.5",
-            "description": "",
-            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
-            "unitOfMeasurement": {
-                "name": "microgram per cubic meter",
-                "symbol": "μg/m3",
-                "definition": "ucum:ug.m-3",
-            },
-            "Sensor": pm_sensor,
-            "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "PM2.5",
-                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=2.5",
-                "description": "Particulate Matter density in ambient air, particle size < 2.5μm",
-            }),
-        })
-
+        datastreams.append(datastream_pm_density(2.5))
+    if "pm4" in data:
+        datastreams.append(datastream_pm_density(4))
     if "pm10" in data:
-        datastreams.append({
-            "name": "Particulate matter PM10",
+        datastreams.append(datastream_pm_density(10))
+
+    def datastream_pm_count(size):
+        return {
+            "name": f"Particulate matter PM{size} count",
             "description": "",
             "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
             "unitOfMeasurement": {
-                "name": "microgram per cubic meter",
-                "symbol": "μg/m3",
-                "definition": "ucum:ug.m-3",
+                "name": "particle count per cubic centimeter",
+                "symbol": "1/cm3",
+                "definition": "ucum:cm-3",
+            },
+            "Sensor": pm_sensor,
+            "ObservedProperty": get_or_create_observed_property(
+                sta,
+                {
+                    "name": f"Particulate matter PM{size} count",
+                    "definition": f"https://qudt.org/vocab/quantitykind/Count#pm_size={size}",
+                    "description": f"Particulate matter count in ambient air, particle size < {size}μm",
+                },
+            ),
+        }
+
+    if "pn1" in data:
+        datastreams.append(datastream_pm_count(1))
+    if "pn2_5" in data:
+        datastreams.append(datastream_pm_count(2.5))
+    if "pn4" in data:
+        datastreams.append(datastream_pm_count(4))
+    if "pn10" in data:
+        datastreams.append(datastream_pm_count(10))
+
+    if "tps" in data:
+        datastreams.append({
+            "name": "Particulate matter typical particle size",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "micrometer",
+                "symbol": "um",
+                "definition": "ucum:um"
             },
             "Sensor": pm_sensor,
             "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "PM10",
-                "definition": "https://qudt.org/vocab/quantitykind/MassDensity#pm_size=10",
-                "description": "Particulate Matter density in ambient air, particle size < 10μm",
+                "name": "Particulate matter typical particle size",
+                "definition": "http://qudt.org/vocab/quantitykind/Diameter",
+                "description": "Particulate matter typical particle size in ambient air"
             }),
         })
-
-    # TODO: Extra PM fields
 
     # lux - illuminance:
     # https://meetjestad.net/en/Experiment_-_Light_sensor_comparison_at_Geophysics_Institute_Bergen
@@ -635,6 +764,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
             ],
         },
     }
+
     if "lux" in data:
         datastreams.append({
             "name": "BPW34 illuminance",
@@ -647,7 +777,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
             },
             "Sensor": bpw34,
             "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "illuminance",
+                "name": "Illuminance",
                 "definition": "http://qudt.org/vocab/quantitykind/LuminousFluxPerArea",
                 "description": "Luminous Flux per Area"
             }),
@@ -668,14 +798,17 @@ def describe_thing(sta, unique_id, msg_obj, data):
             "unitOfMeasurement": {
                 "name": "volt",
                 "symbol": "V",
-                "definition": "ucum:V"
+                "definition": "ucum:V",
             },
             "Sensor": mjs_arduino,
-            "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "battery_voltage",
-                "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=battery",
-                "description": "Battery Voltage"
-            }),
+            "ObservedProperty": get_or_create_observed_property(
+                sta,
+                {
+                    "name": "Battery voltage",
+                    "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=battery",
+                    "description": "Battery Voltage",
+                },
+            ),
         })
 
     if "supply" in data:
@@ -686,15 +819,40 @@ def describe_thing(sta, unique_id, msg_obj, data):
             "unitOfMeasurement": {
                 "name": "volt",
                 "symbol": "V",
-                "definition": "ucum:V"
+                "definition": "ucum:V",
             },
             "Sensor": mjs_arduino,
-            "ObservedProperty": get_or_create_observed_property(sta, {
-                "name": "supply_voltage",
-                "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=supply",
-                "description": "Supply Voltage"
-            }),
+            "ObservedProperty": get_or_create_observed_property(
+                sta,
+                {
+                    "name": "Supply voltage",
+                    "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=supply",
+                    "description": "Supply Voltage",
+                },
+            ),
         })
+
+    if "vsolar" in data:
+        datastreams.append({
+            "name": "Solar voltage",
+            "description": "",
+            "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+            "unitOfMeasurement": {
+                "name": "volt",
+                "symbol": "V",
+                "definition": "ucum:V",
+            },
+            "Sensor": mjs_arduino,
+            "ObservedProperty": get_or_create_observed_property(
+                sta,
+                {
+                    "name": "Solar voltage",
+                    "definition": "http://qudt.org/vocab/quantitykind/Voltage#source=solar",
+                    "description": "Solar Voltage",
+                },
+            ),
+        })
+
     # TODO: location
 
     # TODO: Reuse existing Sensor objects if possible?
@@ -797,6 +955,7 @@ def main():
                     logging.exception("Error processing message: %s", ex)
 
 
-main()
+if __name__ == "__main__":
+    main()
 
 # vim: set sw=4 sts=4 expandtab:
