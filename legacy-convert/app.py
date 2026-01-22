@@ -322,7 +322,11 @@ def create_observations(sta, thing, msg_obj, data):
     for ds in thing["Datastreams"]:
         prop = ds["ObservedProperty"]
         data_name = lookup[prop["name"]]
-        value = data[data_name]
+        try:
+            value = data[data_name]
+        except KeyError:
+            logging.warning("Missing data for datastream: %s / %s", prop["name"], data_name)
+            continue
 
         observation = {
             "result": value,
