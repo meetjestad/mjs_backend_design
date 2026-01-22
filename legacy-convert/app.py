@@ -598,6 +598,16 @@ def describe_thing(sta, unique_id, msg_obj, data):
                     # TODO: Could also be HTU21D
                 },
             ],
+            "documents": [
+                {
+                    "role": "http://dbpedia.org/resource/Datasheet",
+                    "name": "Datasheet",
+                    "link": {
+                        "href": "https://www.silabs.com/documents/public/data-sheets/Si7021-A20.pdf",
+                        "type": "application/pdf",
+                    },
+                },
+            ],
         },
     }
 
@@ -661,6 +671,16 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 "value": "SPS30",
             },
         ]
+        pm_sensor["metadata"]["documents"] = [
+            {
+                "role": "http://dbpedia.org/resource/Datasheet",
+                "name": "Datasheet",
+                "link": {
+                    "href": "https://sensirion.com/media/documents/8600FF88/64A3B8D6/Sensirion_PM_Sensors_Datasheet_SPS30.pdf",
+                    "type": "application/pdf",
+                },
+            },
+        ],
 
     def datastream_pm_density(size):
         return {
@@ -760,6 +780,16 @@ def describe_thing(sta, unique_id, msg_obj, data):
                     "definition": "http://sensorml.com/ont/swe/property/ModelNumber",
                     "label": "Model Number",
                     "value": "BPW34"
+                },
+            ],
+            "documents": [
+                {
+                    "role": "http://dbpedia.org/resource/Datasheet",
+                    "name": "Datasheet",
+                    "link": {
+                        "href": "https://www.vishay.com/docs/81521/bpw34.pdf",
+                        "type": "application/pdf",
+                    },
                 },
             ],
         },
