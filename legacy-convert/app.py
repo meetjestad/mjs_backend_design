@@ -44,6 +44,7 @@ def delete_if_exists(entity, **kwargs):
 def process_message(sta, entry_id, message):
     ttn_msg = message['raw']
     topic = message['src_stream']
+    timestamp = message['received_from_src']
 
     try:
         logging.debug("Received message %s: %s", entry_id, ttn_msg)
@@ -57,13 +58,18 @@ def process_message(sta, entry_id, message):
         logging.info("Not uplink, skipping")
         return
 
+    device_id = msg_obj["end_device_ids"]["device_id"]
     payload = base64.b64decode(msg_obj.get('uplink_message', {}).get('frm_payload', ''))
     port = msg_obj.get('uplink_message', {}).get("f_port", 0)
 
-    decode_uplink(sta, msg_obj, port, payload)
+    try:
+        decode_uplink(sta, msg_obj, device_id, port, payload)
+    except Exception:
+        logging.error("Failed to process message from %s at %s: %s", device_id, timestamp, msg_obj)
+        raise
 
 
-def decode_uplink(sta, msg_obj, port, payload):
+def decode_uplink(sta, msg_obj, device_id, port, payload):
     stream = bitstring.ConstBitStream(bytes=payload)
 
     l = len(payload)
@@ -187,19 +193,20 @@ def decode_uplink(sta, msg_obj, port, payload):
     if data["extra"]:
         process_extra(data)
 
+    logging.debug("Decoded: %s", data)
+
     # TODO: Maybe only check when framecount lowered or a new session
     # was started?
     check_metadata = True
 
     thing = get_or_create_thing(sta, msg_obj, data, check_metadata)
 
-    logging.info("Decoded: %s", data)
-    logging.info("Found: %s", thing)
+    logging.debug("Found: %s", thing)
 
     create_observations(sta, thing, msg_obj, data)
 
 
-def process_extra(data):
+def process_extra(device_id, data):
     # keep original for whatever reason
     extra = list(data.get("extra", []))
     firmware = data.get("firmware_version", None)
@@ -268,14 +275,8 @@ def process_extra(data):
                 extra,
                 firmware,
             )
-    else:
-        logging.info(
-            "Extra firmware: %s (#TODO! this firmware is not parsed) %s", firmware, extra
-        )
-
-    logging.debug(
-        "Extra firmware: %s, data: %s", data.get("firmware_version", None), data
-    )
+    elif extra:
+        logging.warning("%s: extra fields not parsed, unknown firmware: %s, extra %s", device_id, firmware, extra)
 
 
 def create_observations(sta, thing, msg_obj, data):
@@ -499,10 +500,10 @@ def get_or_create_thing(sta, msg_obj, data, check_metadata):
         if changes:
             logging.info(f"{unique_id}: Found Thing({thing['@iot.id']}), metadata changed, changes: {changes}")
         else:
-            logging.info(f"{unique_id}: Found Thing({thing['@iot.id']}), metadata unchanged")
+            logging.debug(f"{unique_id}: Found Thing({thing['@iot.id']}), metadata unchanged")
             new_thing = None
     else:
-        logging.info(f"{unique_id}: Found Thing({thing['@iot.id']}), not checking metadata")
+        logging.debug(f"{unique_id}: Found Thing({thing['@iot.id']}), not checking metadata")
 
     if new_thing:
         new_path = sta.create_thing(new_thing)
@@ -929,7 +930,7 @@ def main():
     signal.signal(signal.SIGTERM, terminate)
     signal.signal(signal.SIGINT, terminate)
 
-    logging.basicConfig(level=logging.DEBUG, force=True)
+    logging.basicConfig(level=logging.INFO, force=True)
 
     logging.info(
         "Connecting Redis to {} on port {}".format(redis_url.hostname, redis_url.port)
