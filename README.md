@@ -122,12 +122,24 @@ queue can still fill up. A current workaround is to modify ttn-save-msg to not
 forward message to the second queue, but instead use a manual db replay
 afterwards.
 
-Since legacy-convert does not handle messages it has seen before (it assumes it sees only new messages in chronological order), you should currently clear out the FROST db before replaying messages. For example:
+Since legacy-convert does not handle messages it has seen before (it assumes it
+sees only new messages in chronological order), you should currently clear out
+the FROST db and saved redis stream before replaying messages. Also recreate
+legacy-convert to clear in-memory caches and load the new FROST password. It is
+also advisable to stop the ttn-save-msg container to prevent mixing new and old
+messages (they will still be fetch by ttn-to-redis and saved in the first redis
+stream).
+
+For example:
 
 ```
 docker compose down frost-db frost-web -v
 ./set-frost-passwords
+docker compose stop ttn-save-msg
+docker compose exec redis redis-cli DEL saved.ttn.meet-je-stad 0
+docker compose -f docker-compose-dev.yml up -d legacy-convert
 docker compose -f docker-compose-dev.yml run ttn-utility replay-from-db --start-date 2024-11-29 --end-date 2024-11-30
+docker compose start ttn-save-msg
 ```
 
 This readds older messages to the redis stream, to be processed by legacy convert.
