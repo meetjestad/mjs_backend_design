@@ -150,8 +150,9 @@ class SensorThings:
         # This should redirect to the id/path of the added object
         new_path = response.headers["Location"]
         # TODO: Unhack, figure out why this happens, maybe FROST bug or
-        # config issue?
-        new_path = re.sub('^/v1.1', '', new_path)
+	# config issue? With properly set up serviceRootUrl this produces the
+	# full (external) URL including domain.
+        new_path = re.sub('^.*/v1.1', '', new_path)
         return new_path
 
     def create_procedure(self, content: str, content_type: str):
