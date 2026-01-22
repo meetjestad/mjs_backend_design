@@ -191,7 +191,7 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
         data["extra"] = []
 
     if data["extra"]:
-        process_extra(data)
+        process_extra(device_id, data)
 
     logging.debug("Decoded: %s", data)
 
