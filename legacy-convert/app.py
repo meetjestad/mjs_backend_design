@@ -366,32 +366,37 @@ def get_or_create_observed_property(sta, props):
         observed_property_cache[cache_key] = result
         return result
 
+thing_cache = {}
 
 def get_or_create_thing(sta, msg_obj, data, check_metadata):
     unique_id = make_thing_id(msg_obj)
+    cache_key = unique_id
 
-    expand = (
-        "MultiDatastreams,MultiDatastreams/Sensor,MultiDatastreams/ObservedProperties,"
-        + "Datastreams,Datastreams/Sensor,Datastreams/ObservedProperty"
-    )
+    try:
+        thing = thing_cache[cache_key]
+    except KeyError:
+        expand = (
+            "MultiDatastreams,MultiDatastreams/Sensor,MultiDatastreams/ObservedProperties,"
+            + "Datastreams,Datastreams/Sensor,Datastreams/ObservedProperty"
+        )
 
-    objs = sta.get_objects_filtered(
-        '/Things',
-        filter=QOp(
-            QOp(QField('properties/metadata/uniqueId'), QOperator.Eq, QLiteral(unique_id)),
-            QOperator.And,
-            QOp(QField('properties/metadata/validTime/1'), QOperator.Eq, QLiteral('now')),
-        ),
-        expand=expand,
-    )
+        objs = sta.get_objects_filtered(
+            '/Things',
+            filter=QOp(
+                QOp(QField('properties/metadata/uniqueId'), QOperator.Eq, QLiteral(unique_id)),
+                QOperator.And,
+                QOp(QField('properties/metadata/validTime/1'), QOperator.Eq, QLiteral('now')),
+            ),
+            expand=expand,
+        )
 
-    if not objs:
-        thing = None
-    elif len(objs) > 1:
-        logging.warning(f"{unique_id}: Multiple things with same uniqueId and open validTime found, using first one")
-        thing = objs[0]
-    else:
-        thing = objs[0]
+        if not objs:
+            thing = None
+        elif len(objs) > 1:
+            logging.warning(f"{unique_id}: Multiple things with same uniqueId and open validTime found, using first one")
+            thing = objs[0]
+        else:
+            thing = objs[0]
 
     new_thing = None
     if thing is None or check_metadata:
