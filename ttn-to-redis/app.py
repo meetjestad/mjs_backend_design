@@ -53,6 +53,7 @@ def main():
         client.subscribe("v3/+/devices/+/+")
 
     def on_message(client, userdata, msg):
+        global publish_count
         logging.debug("Received message on topic %s: %s", msg.topic, str(msg.payload))
 
         # Work around https://github.com/redis/redis/issues/14656
