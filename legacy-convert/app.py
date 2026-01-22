@@ -462,6 +462,13 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 "value": "Meet je stad"
             },
         ],
+        "characteristics": [
+            {
+                "definition": "http://sensorml.com/ont/swe/property/FirmwareVersion",
+                "label": "Firmware version",
+                "value": data['firmware_version'],
+            },
+        ],
     }
 
     is_mjs2020 = False
