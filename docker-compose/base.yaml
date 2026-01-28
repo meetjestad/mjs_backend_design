@@ -71,8 +71,8 @@ services:
      - ../ttn-utility/config.env
 
   frost-web:
-    # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
-    image: fraunhoferiosb/frost-server:2.7.0-SNAPSHOT
+    # We need 2.8.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2304
+    image: fraunhoferiosb/frost-server:2.8.0-SNAPSHOT
     restart: unless-stopped
     environment:
       # For all settings see: https://fraunhoferiosb.github.io/FROST-Server/settings/settings.html
