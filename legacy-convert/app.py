@@ -17,7 +17,6 @@ import redis
 from iso8601 import parse_date
 from pony import orm
 
-import db
 import sensorthings
 from sensorthings import QOperator, QOp, QLiteral, QField
 
@@ -25,12 +24,9 @@ from sensorthings import QOperator, QOp, QLiteral, QField
 # using legacy_meta_lookups, see legacy_extra_parse for details
 import legacy_extra_parse as lookup_extra
 
-database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
 redis_stream_in = os.environ["REDIS_STREAM_IN"]
 redis_consumer_group = os.environ["REDIS_CONSUMER_GROUP"]
-
-db.init(database_url)
 
 
 def delete_if_exists(entity, **kwargs):
@@ -44,7 +40,6 @@ def delete_if_exists(entity, **kwargs):
         logging.info("Deleted previous %s %s", entity.__name__, kwargs)
 
 
-@orm.db_session
 def process_message(sta, entry_id, message):
     ttn_msg = message['raw']
     topic = message['src_stream']

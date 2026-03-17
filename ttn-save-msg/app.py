@@ -9,7 +9,6 @@ from urllib.parse import urlparse
 
 import redis
 from iso8601 import parse_date
-from pony import orm
 
 import common.db
 
@@ -39,7 +38,6 @@ def delete_if_exists(entity, **kwargs):
         logging.info("Deleted previous %s %s", entity.__name__, kwargs)
 
 
-@orm.db_session
 def process_message(redis_server, entry_id, message):
     global publish_count
     ttn_msg = message['msg']
@@ -55,7 +53,7 @@ def process_message(redis_server, entry_id, message):
         src_stream=topic,
         message=ttn_msg,
     )
-    db_con.values(*raw_msg).insert_into('raw_message')
+    db_con.values(list(raw_msg)).insert_into('rawmessage')
     logging.debug("Saved message with id %s", raw_msg.hex_hash)
 
     # Work around https://github.com/redis/redis/issues/14656
@@ -68,12 +66,11 @@ def process_message(redis_server, entry_id, message):
         redis_server.xadd(
             redis_stream_out,
             {
-                "db_id": raw_msg.id,
+                "db_id": raw_msg.hash,
                 "src": raw_msg.src,
-                "src_id": raw_msg.src_id,
                 "src_stream": raw_msg.src_stream,
-                "received_from_src": raw_msg.received_from_src.isoformat(),
-                "raw": raw_msg.raw,
+                "received_from_src": raw_msg.timestamp.isoformat(),
+                "raw": raw_msg.message,
             },
             # This trims the stream to the given length, but only
             # removes messages that were acked by all consumer
