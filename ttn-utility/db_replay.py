@@ -3,7 +3,7 @@ import logging
 
 from iso8601 import parse_date
 
-import db
+import common.db
 import redis_helpers
 
 
@@ -64,7 +64,7 @@ def replay_from_db(redis_server, db_con, args):
 
 def replay_period(redis_server, db_con, args, period_from, period_to):
     messages = db_con.execute(f"""
-        SELECT {db.RawMessage.fields_for_select()} FROM rawmessage
+        SELECT {common.db.RawMessage.fields_for_select()} FROM rawmessage
         WHERE timestamp >= ? AND timestamp < ?
         ORDER BY timestamp
     """, [period_from, period_to])
@@ -75,7 +75,7 @@ def replay_period(redis_server, db_con, args, period_from, period_to):
         if row is None:
             break
 
-        msg = db.RawMessage(*row)
+        msg = common.db.RawMessage(*row)
 
         try:
             message_data = {
