@@ -21,6 +21,10 @@ import db
 import sensorthings
 from sensorthings import QOperator, QOp, QLiteral, QField
 
+# lookup_extra for firmware v255 using 'node_metadata.json'
+# using legacy_meta_lookups, see legacy_extra_parse for details
+import legacy_extra_parse as lookup_extra
+
 database_url = urlparse(os.environ["DATABASE_URL"])
 redis_url = urlparse(os.environ["REDIS_URL"])
 redis_stream_in = os.environ["REDIS_STREAM_IN"]
@@ -191,9 +195,7 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
         data["extra"] = []
 
     if data["extra"]:
-        process_extra(device_id, data)
-
-    logging.debug("Decoded: %s", data)
+        process_extra(device_id, data, msg_obj)
 
     # TODO: Maybe only check when framecount lowered or a new session
     # was started?
@@ -206,7 +208,7 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
     create_observations(sta, thing, msg_obj, data)
 
 
-def process_extra(device_id, data):
+def process_extra(device_id, data, msg_obj):
     # keep original for whatever reason
     extra = list(data.get("extra", []))
     firmware = data.get("firmware_version", None)
@@ -275,6 +277,10 @@ def process_extra(device_id, data):
                 extra,
                 firmware,
             )
+
+    elif firmware == 255:
+        logging.debug("Extra firmware: %s (lookup_extra.parse_extra): %s", firmware, extra)
+        lookup_extra.parse_extra(msg_obj, data)
     elif extra:
         logging.warning("%s: extra fields not parsed, unknown firmware: %s, extra %s", device_id, firmware, extra)
 
@@ -299,6 +305,10 @@ def create_observations(sta, thing, msg_obj, data):
         "Battery voltage": "battery",
         "Supply voltage": "supply",
         "Solar voltage": "vsolar",
+        "Soil moisture on 10cm depth": "soil_d10_moist",
+        "Soil moisture on 40cm depth": "soil_d40_moist",
+        "Soil temperature on 10cm depth": "soil_d10_temp",
+        "Soil temperature on 40cm depth": "soil_d40_temp",
     }
 
     for ds in thing["MultiDatastreams"]:
@@ -887,6 +897,78 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 },
             ),
         })
+
+    soil_temp_sensor = {
+        "name": "Soil temperature sensor",
+        "description": "2xpinotechsw10_2xntc10k",
+        "encodingType": "application/vnd.ogc.sml+json",
+        "metadata": {
+            "type": "PhysicalComponent",
+            "definition": "http://www.w3.org/ns/sosa/Sensor",
+        },
+    }
+
+    def datastream_soil_temp(size):
+        return {
+                "name": f"Soil temperature on {size}cm depth",
+                "description": "",
+                "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+                "unitOfMeasurement": {
+                    "name": "degree Celcius",
+                    "symbol": "°C",
+                    "definition": "ucum:Cel"
+                },
+                "Sensor": soil_temp_sensor,
+                "ObservedProperty": get_or_create_observed_property(
+                    sta,
+                    {
+                        "name": f"Soil temperature on {size}cm depth",
+                        "definition": f"http://qudt.org/vocab/quantitykind/Temperature#depth={size}cm",
+                        "description": f"Soil temperature on {size}cm depth."
+                    },
+                ),
+            }
+
+    if "soil_d10_temp" in data:
+        datastreams.append(datastream_soil_temp(10))
+    if "soil_d40_temp" in data:
+        datastreams.append(datastream_soil_temp(40))
+
+    soil_moist_sensor = {
+        "name": "Soil moisture sensor",
+        "description": "2xpinotechsw10_2xntc10k",
+        "encodingType": "application/vnd.ogc.sml+json",
+        "metadata": {
+            "type": "PhysicalComponent",
+            "definition": "http://www.w3.org/ns/sosa/Sensor",
+        },
+    }
+
+    def datastream_soil_moist(size):
+        return {
+                "name": f"Soil moisture on {size}cm depth",
+                "description": "",
+                "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+                "unitOfMeasurement": {
+                    "name": "percent",
+                    "symbol": "%",
+                    "definition": "ucum:%"
+                },
+                "Sensor": soil_moist_sensor,
+                "ObservedProperty": get_or_create_observed_property(
+                    sta,
+                    {
+                        "name": f"Soil moisture on {size}cm depth",
+                        "definition": f"https://qudt.org/vocab/quantitykind/Moist??TODO#depth={size}cm",
+                        "description": f"Soil moisture on {size}cm depth.",
+                    },
+                ),
+            }
+
+    if "soil_d10_moist" in data:
+        datastreams.append(datastream_soil_moist(10))
+    if "soil_d40_moist" in data:
+        datastreams.append(datastream_soil_moist(40))
 
     # TODO: location
 
