@@ -28,8 +28,8 @@ services:
     environment:
       REDIS_URL: redis://redis:6379/0
     env_file:
-     - ../secrets.env
-     - ../ttn-to-redis/config.env
+      - ../secrets.env
+      - ../ttn-to-redis/config.env
 
   ttn-save-msg:
     build: ../ttn-save-msg
@@ -41,7 +41,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
     env_file:
-     - ../ttn-save-msg/config.env
+      - ../ttn-save-msg/config.env
 
   legacy-convert:
     build: ../legacy-convert
@@ -55,8 +55,8 @@ services:
       SENSORTHINGS_URL: http://frost-web:8080/FROST-Server/v1.1
       SENSORTHINGS_USER: write
     env_file:
-     - ../legacy-convert/config.env
-     - ../secrets.env
+      - ../legacy-convert/config.env
+      - ../secrets.env
 
   ttn-utility:
     build: ../ttn-utility
@@ -68,7 +68,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
     env_file:
-     - ../ttn-utility/config.env
+      - ../ttn-utility/config.env
 
   frost-web:
     # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
