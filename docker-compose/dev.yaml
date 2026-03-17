@@ -16,3 +16,4 @@ services:
   ttn-utility:
     volumes:
      - ../ttn-utility:/code
+     - ../common:/code/common

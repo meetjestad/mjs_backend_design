@@ -12,5 +12,7 @@ COPY pyproject.toml poetry.lock* ./
 RUN poetry install --only main
 
 COPY . .
+# This copies from a secondary context called "common", normally we cannot access files outside of our context
+COPY --from=common . ./common
 
 ENTRYPOINT ["python", "app.py"]

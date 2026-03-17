@@ -59,7 +59,10 @@ services:
       - ../secrets.env
 
   ttn-utility:
-    build: ../ttn-utility
+    build:
+      context: ../ttn-utility
+      additional_contexts:
+        common: ../common
     profiles: [manual]
     links:
       - redis:redis

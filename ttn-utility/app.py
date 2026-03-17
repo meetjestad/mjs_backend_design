@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 import redis
 
-import db
+import common.db
 import file_import
 import db_replay
 
@@ -70,7 +70,7 @@ def main():
     redis_server = setup_redis_connection()
 
     database_path = os.environ["MSG_DATABASE_PATH"]
-    db_con = db.init(database_path)
+    db_con = common.db.init(database_path)
 
     # Execute command
     if args.command == 'import-from-file':
@@ -78,7 +78,7 @@ def main():
     elif args.command == 'replay-from-db':
         db_replay.replay_from_db(redis_server, db_con, args)
 
-    db.shutdown(db_con)
+    common.db.shutdown(db_con)
 
 
 if __name__ == '__main__':

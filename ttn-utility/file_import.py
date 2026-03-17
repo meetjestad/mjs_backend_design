@@ -7,7 +7,7 @@ import pathlib
 
 import duckdb
 
-import db
+import common.db
 
 
 def add_arguments(parser):
@@ -52,8 +52,8 @@ def import_one_file(redis_server, db_con, file, args):
             return f"v3/{app_id}@ttn/devices/{device_id}/up"
 
     # Convert hash to string and back to UHUGEINT in the query below to work around https://github.com/duckdb/duckdb-python/issues/330
-    # db_con.create_function('calc_hash', db.RawMessage.calc_hash, return_type=duckdb.sqltypes.UHUGEINT)
-    db_con.create_function('calc_hash', lambda *args: str(db.RawMessage.calc_hash(*args)), return_type=duckdb.sqltypes.VARCHAR)
+    # db_con.create_function('calc_hash', common.db.RawMessage.calc_hash, return_type=duckdb.sqltypes.UHUGEINT)
+    db_con.create_function('calc_hash', lambda *args: str(common.db.RawMessage.calc_hash(*args)), return_type=duckdb.sqltypes.VARCHAR)
     db_con.create_function('calc_src_stream', calc_src_stream)
 
     try:
