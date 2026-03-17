@@ -10,6 +10,7 @@ services:
   ttn-save-msg:
     volumes:
      - ../ttn-save-msg:/code
+     - ../common:/code/common
   legacy-convert:
     volumes:
      - ../legacy-convert:/code

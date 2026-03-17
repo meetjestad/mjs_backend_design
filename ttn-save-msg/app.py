@@ -11,9 +11,9 @@ import redis
 from iso8601 import parse_date
 from pony import orm
 
-import db
+import common.db
 
-database_url = urlparse(os.environ["DATABASE_URL"])
+database_path = os.environ["MSG_DATABASE_PATH"]
 redis_url = urlparse(os.environ["REDIS_URL"])
 redis_stream_in = os.environ["REDIS_STREAM_IN"]
 redis_stream_out = os.environ["REDIS_STREAM_OUT"]
@@ -24,7 +24,7 @@ try:
 except KeyError:
     redis_maxlen = None
 
-db.init(database_url)
+db_con = common.db.init(database_path)
 
 publish_count = 0
 
@@ -47,19 +47,16 @@ def process_message(redis_server, entry_id, message):
     topic = message['topic']
     timestamp = parse_date(message['timestamp'])
 
-    # TODO: Use session_key_id and fcnt to generate an id
     # First thing, secure the message in the rawest form
-    delete_if_exists(db.RawMessage, src=src, src_id=entry_id)
-    raw_msg = db.RawMessage(
+    raw_msg = common.db.RawMessage(
+        hash=common.db.RawMessage.calc_hash(ttn_msg),
+        timestamp=timestamp,
         src=src,
-        # TTN does not assign ids, so use the id assigned by redis then
-        src_id=entry_id,
         src_stream=topic,
-        received_from_src=timestamp,
-        raw=ttn_msg,
+        message=ttn_msg,
     )
-    orm.commit()
-    logging.debug("Saved message with id %s", raw_msg.id)
+    db_con.values(*raw_msg).insert_into('raw_message')
+    logging.debug("Saved message with id %s", raw_msg.hex_hash)
 
     # Work around https://github.com/redis/redis/issues/14656
     approximate = True

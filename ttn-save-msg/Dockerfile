@@ -7,9 +7,12 @@ RUN pip install poetry
 # layer cache when code changes. See
 # https://medium.com/@albertazzir/blazing-fast-python-docker-builds-with-poetry-a78a66f5aed0
 WORKDIR /code
-ADD pyproject.toml /code
-ADD poetry.lock /code
+COPY pyproject.toml .
+COPY poetry.lock .
 RUN poetry install --without dev --no-root --no-cache
 
-ADD . /code
+COPY . .
+# This copies from a secondary context called "common", normally we cannot access files outside of our context
+COPY --from=common . ./common
+
 CMD ["poetry", "run", "python", "app.py"]
