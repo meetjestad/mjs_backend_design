@@ -1,35 +1,55 @@
-from datetime import datetime
-from pony import orm
+import datetime
+import hashlib
+import typing
 
-# Below, datetime types specify the sql_type explicitly, to ensure timezone
-# information is stored along with the timestamps. See also
-# https://github.com/ponyorm/pony/issues/434
-
-db = orm.Database()
+import duckdb
 
 
-def init(database_url):
-    db.bind(
-        provider=database_url.scheme,
-        user=database_url.username,
-        password=database_url.password,
-        host=database_url.hostname,
-        port=database_url.port,
-        database=database_url.path[1:],
-    )
+class RawMessage(typing.NamedTuple):
+    """
+    Helper to store the result of a query.
 
-    db.generate_mapping(create_tables=True)
-    return db
+    Since duckdb seems to only return tuples, use the fields_for_select() method to generate a SELECT clause and pass
+    the resulting tuple to the RawMessage constructor, to ensure matching field order.
+
+    TODO: Is there no cleaner way to let duckdb figure this out?
+    """
+    hash: int
+    timestamp: datetime.datetime
+    src: str
+    src_stream: str
+    message: str
+
+    @classmethod
+    def fields_for_select(cls):
+        return ", ".join(cls._fields)
+
+    @classmethod
+    def calc_hash(cls, message: str) -> int:
+        hash = hashlib.sha256(message.strip().encode())
+        # Truncate to 16 bytes and convert to an integer to fit UHUGEINT type. This saves significant space in the database.
+        return int.from_bytes(hash.digest()[:16], byteorder='big', signed=False)
+
+    @property
+    def hex_hash(self):
+        return self.hash.to_bytes(length=16, byteorder='big', signed=False).hex()
 
 
-class RawMessage(db.Entity):
-    # Single id primary key to make it easier to refer to these messages
-    id = orm.PrimaryKey(int, auto=True)
+def init(database_path):
+    con = duckdb.connect(database_path, config={'storage_compatibility_version': 'latest'})
 
-    # Source type and source-specific id to allow correlating with upstream messages, if any
-    src = orm.Required(str)
-    src_id = orm.Optional(str)
-    src_stream = orm.Optional(str)
-    received_from_src = orm.Optional(datetime, sql_type='TIMESTAMP WITH TIME ZONE')
+    con.execute("""
+    CREATE TABLE IF NOT EXISTS rawmessage (
+        hash UHUGEINT PRIMARY KEY,
+        timestamp TIMESTAMP WITH TIME ZONE,
+        src VARCHAR NOT NULL,
+        src_stream VARCHAR NOT NULL,
+        message JSON NOT NULL USING COMPRESSION 'zstd',
+    )""")
+    #con.execute("""SET memory_limit = '500MB'""")
 
-    raw = orm.Optional(str)
+    return con
+
+
+def shutdown(con):
+    con.close()

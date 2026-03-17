@@ -63,12 +63,13 @@ services:
     profiles: [manual]
     links:
       - redis:redis
-      - timescale:timescale
     environment:
       REDIS_URL: redis://redis:6379/0
-      DATABASE_URL: postgres://postgres:password@timescale:5432/postgres
+      MSG_DATABASE_PATH: /db/messages.db
     env_file:
       - ../ttn-utility/config.env
+    volumes:
+      - msg-db-data:/db
 
   frost-web:
     # We need 2.7.0 for https://github.com/FraunhoferIOSB/FROST-Server/issues/2142
@@ -121,3 +122,4 @@ volumes:
   frost-db-data:
   redis-data:
   timescale-data:
+  msg-db-data:

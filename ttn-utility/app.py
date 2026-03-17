@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+import glob
 import logging
 import os
 import signal
@@ -8,11 +9,10 @@ import sys
 from urllib.parse import urlparse
 
 import redis
-from iso8601 import parse_date
 
 import db
-from file_import import import_from_file
-from db_replay import replay_from_db
+import file_import
+import db_replay
 
 
 class SharedContext:
@@ -32,28 +32,6 @@ def setup_redis_connection():
     )
 
 
-def cmd_import_from_file(redis_server, args):
-    """Import messages from zstd TSV file to Redis stream."""
-    try:
-        for file in args.files:
-            import_from_file(redis_server, file, args.stream)
-    except Exception as e:
-        logging.exception("File import failed", exc_info=e)
-        sys.exit(1)
-
-
-def cmd_replay_from_db(redis_server, args):
-    """Replay messages from database to Redis stream."""
-    try:
-        start_dt = parse_date(args.start_date)
-        end_dt = parse_date(args.end_date)
-        replay_from_db(redis_server, start_dt, end_dt, args.stream)
-        logging.info("Database replay completed successfully")
-    except Exception as e:
-        logging.error("Database replay failed: %s", exc_info=e)
-        sys.exit(1)
-
-
 def _terminate(sig, *args):
     print(f"Received signal {sig}, terminating", flush=True)
     sys.exit(0)
@@ -70,42 +48,17 @@ def main():
 
     subparsers = parser.add_subparsers(dest='command', help='Available commands')
 
-    # import-from-file command
     import_parser = subparsers.add_parser(
         'import-from-file',
         help='Import messages from zstd TSV file to Redis stream'
     )
-    import_parser.add_argument(
-        '--stream',
-        default='ttn.meet-je-stad',
-        help='Redis stream to publish to (default: ttn.meet-je-stad)'
-    )
-    import_parser.add_argument(
-        'files',
-        nargs='+',
-        help='TSV files to import (zstd-encoded)'
-    )
+    file_import.add_arguments(import_parser)
 
-    # replay-from-db command
     replay_parser = subparsers.add_parser(
         'replay-from-db',
         help='Replay messages from database to Redis stream'
     )
-    replay_parser.add_argument(
-        '--start-date',
-        required=True,
-        help='Start date (inclusive, ISO 8601 format)'
-    )
-    replay_parser.add_argument(
-        '--end-date',
-        required=True,
-        help='End date (exclusive, ISO 8601 format)'
-    )
-    replay_parser.add_argument(
-        '--stream',
-        default='saved.ttn.meet-je-stad',
-        help='Redis stream to publish to (default: saved.ttn.meet-je-stad)'
-    )
+    db_replay.add_arguments(replay_parser)
 
     args = parser.parse_args()
 
@@ -116,14 +69,16 @@ def main():
     # Setup shared context
     redis_server = setup_redis_connection()
 
+    database_path = os.environ["MSG_DATABASE_PATH"]
+    db_con = db.init(database_path)
+
     # Execute command
     if args.command == 'import-from-file':
-        cmd_import_from_file(redis_server, args)
+        file_import.import_from_file(redis_server, db_con, args)
     elif args.command == 'replay-from-db':
-        database_url = urlparse(os.environ["DATABASE_URL"])
-        db.init(database_url)
+        db_replay.replay_from_db(redis_server, db_con, args)
 
-        cmd_replay_from_db(redis_server, args)
+    db.shutdown(db_con)
 
 
 if __name__ == '__main__':
