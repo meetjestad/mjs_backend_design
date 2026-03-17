@@ -105,13 +105,13 @@ This utility is also contained in a docker compose container, which is not
 started by default, but can be started explicitly:
 
 ```
-docker compose -f docker-compose-dev.yml run ttn-utility --help
+docker compose -f docker-compose-dev.yml run --rm ttn-utility --help
 ```
 
 To import messages from file (zstd-encoded tab-separated values as exported from the current production mysql db):
 
 ```
-docker compose -f docker-compose-dev.yml run --volume ./data:/data ttn-utility import-from-file /data/file.tsv.zstd
+docker compose -f docker-compose-dev.yml run --rm --volume ./data:/data ttn-utility import-from-file /data/file.tsv.zstd
 ```
 
 This queues messages into redis, expecting them to be processed by
@@ -138,7 +138,7 @@ docker compose down frost-db frost-web -v
 docker compose stop ttn-save-msg
 docker compose exec redis redis-cli DEL saved.ttn.meet-je-stad 0
 docker compose -f docker-compose-dev.yml up -d legacy-convert
-docker compose -f docker-compose-dev.yml run ttn-utility replay-from-db --start-date 2024-11-29 --end-date 2024-11-30
+docker compose -f docker-compose-dev.yml run --rm ttn-utility replay-from-db --start-date 2024-11-29 --end-date 2024-11-30
 docker compose start ttn-save-msg
 ```
 
@@ -183,3 +183,7 @@ the number of pending (not acked) messages ("pel-length"):
 Query the decoder database:
 
     docker compose exec timescale psql -U postgres postgres --command "SELECT * FROM rawmessage LIMIT 1;"
+
+Show frost-db table sizes:
+
+    docker compose exec frost-db psql -U frost frost --command "\d+"
