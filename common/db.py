@@ -27,7 +27,8 @@ class RawMessage(typing.NamedTuple):
     @classmethod
     def calc_hash(cls, message: str) -> int:
         hash = hashlib.sha256(message.strip().encode())
-        # Truncate to 16 bytes and convert to an integer to fit UHUGEINT type. This saves significant space in the database.
+        # Truncate to 16 bytes and convert to an integer to fit UHUGEINT type.
+        # This saves significant space in the database.
         return int.from_bytes(hash.digest()[:16], byteorder='big', signed=False)
 
     @property
@@ -46,7 +47,6 @@ def init(database_path):
         src_stream VARCHAR NOT NULL,
         message JSON NOT NULL USING COMPRESSION 'zstd',
     )""")
-    #con.execute("""SET memory_limit = '500MB'""")
 
     return con
 
