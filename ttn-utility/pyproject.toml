@@ -15,11 +15,8 @@ pony = { git = "https://github.com/black-sliver/pony.git", branch = "feat/py314"
 psycopg2-binary = "^2.9.11"
 iso8601 = "^2.1.0"
 requests = "^2.32.5"
-
-[tool.poetry.group.dev]
-optional = true
-
-[tool.poetry.group.dev.dependencies]
+duckdb = "^1.4.3"
+pytz = "^2026.1.post1"
 
 [build-system]
 requires = ["poetry-core"]
