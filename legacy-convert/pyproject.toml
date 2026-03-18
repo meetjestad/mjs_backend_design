@@ -14,7 +14,7 @@ psycopg2-binary = "^2.9.11"
 iso8601 = "^2.1.0"
 requests = "^2.32.5"
 bitstring = "^4.3.1"
-deepdiff = "^8.6.1"
+deepdiff = "^8.6.2"
 
 [tool.poetry.group.dev]
 optional = true
