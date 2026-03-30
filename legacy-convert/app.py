@@ -200,7 +200,7 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
 
     logging.debug("Found: %s", thing)
 
-    create_observations(sta, thing, msg_obj, data)
+    create_observations(sta, thing, msg_obj, data, device_id)
 
 
 def process_extra(device_id, data, msg_obj):
@@ -280,7 +280,7 @@ def process_extra(device_id, data, msg_obj):
         logging.warning("%s: extra fields not parsed, unknown firmware: %s, extra %s", device_id, firmware, extra)
 
 
-def create_observations(sta, thing, msg_obj, data):
+def create_observations(sta, thing, msg_obj, data, device_id):
     time = parse_date(msg_obj["received_at"])
 
     # lookup: map ObservedProperty/name to data dict_key
@@ -330,7 +330,7 @@ def create_observations(sta, thing, msg_obj, data):
         try:
             value = data[data_name]
         except KeyError:
-            logging.warning("Missing data for datastream: %s / %s", prop["name"], data_name)
+            logging.warning("Missing data for datastream: %s / %s for device_id: %s", prop["name"], data_name, device_id)
             continue
 
         observation = {
