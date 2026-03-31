@@ -690,7 +690,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
                     "type": "application/pdf",
                 },
             },
-        ],
+        ]
 
     def datastream_pm_density(size):
         return {
