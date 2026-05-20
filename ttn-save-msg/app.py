@@ -66,7 +66,7 @@ def process_message(redis_server, entry_id, message):
         redis_server.xadd(
             redis_stream_out,
             {
-                "db_id": raw_msg.hash,
+                "db_id": raw_msg.hex_hash,
                 "src": raw_msg.src,
                 "src_stream": raw_msg.src_stream,
                 "received_from_src": raw_msg.timestamp.isoformat(),
