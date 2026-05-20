@@ -84,6 +84,7 @@ def replay_period(redis_server, db_con, args, period_from, period_to):
                 "src_stream": msg.src_stream,
                 "received_from_src": msg.timestamp.isoformat(),
                 "raw": msg.message,
+                "is_replay": 1,
             }
 
             redis_helpers.publish(redis_server, args.stream, message_data)
