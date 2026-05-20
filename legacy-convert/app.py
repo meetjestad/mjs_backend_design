@@ -15,7 +15,6 @@ import bitstring
 import deepdiff
 import redis
 from iso8601 import parse_date
-from pony import orm
 
 import sensorthings
 from sensorthings import QOperator, QOp, QLiteral, QField
