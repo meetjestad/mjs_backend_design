@@ -9,7 +9,6 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 redis = "^7.0.1"
-pony = "^0.7.19"
 iso8601 = "^2.1.0"
 psycopg2-binary = "^2.9.11"
 duckdb = "^1.5.0"
