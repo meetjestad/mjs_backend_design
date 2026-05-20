@@ -79,8 +79,8 @@ def replay_period(redis_server, db_con, args, period_from, period_to):
 
         try:
             message_data = {
+                "db_id": msg.hex_hash,
                 "src": msg.src,
-                "src_id": msg.hex_hash,
                 "src_stream": msg.src_stream,
                 "received_from_src": msg.timestamp.isoformat(),
                 "raw": msg.message,
