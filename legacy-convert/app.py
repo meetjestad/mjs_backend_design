@@ -28,6 +28,14 @@ redis_url = urlparse(os.environ["REDIS_URL"])
 redis_stream_in = os.environ["REDIS_STREAM_IN"]
 redis_consumer_group = os.environ["REDIS_CONSUMER_GROUP"]
 
+# external DataSource rest-api: URL or set to False to disable.
+# example: "http://localhost:8081/DataSources" (with OAPI alike json respnse for DataSource({db_hex_id}))
+datasource_api_url = os.environ.get("DATASOURCE_API_URL", False)
+if datasource_api_url:
+    logging.info("External DataSource API enabled: %s()", datasource_api_url)
+else:
+    logging.info("External DataSource API disabled.")
+
 
 def delete_if_exists(entity, **kwargs):
     # This runs a DELETE query without creating an instance. This bypasses the
@@ -414,6 +422,7 @@ def create_observations(sta, thing, ttn_data, data, observation_data_map):
             "result": values,
             "phenomenonTime": time.isoformat(),
             "resultTime": time.isoformat(),
+            "parameters": {"DataSource": ttn_data.db_id, "DataSource@iot.navigationLink": f"http://localhost:8081/DataSources({ttn_data.db_id})"},
             # TODO: Better go via the thing location, and/or GPS datastream,
             # but for now just store whatever location is in the data packet
             # directly.
@@ -444,13 +453,17 @@ def create_observations(sta, thing, ttn_data, data, observation_data_map):
             "result": value,
             "phenomenonTime": time.isoformat(),
             "resultTime": time.isoformat(),
+            "parameters": {"DataSource": ttn_data.db_id},
             # TODO: Better go via the thing location, and/or GPS datastream,
             # but for now just store whatever location is in the data packet
             # directly.
             "FeatureOfInterest": get_or_create_feature_of_interest(sta, lat=data["latitude"], lon=data["longitude"]),
         }
 
-        sta.create_observation('Datastreams', ds["@iot.id"], observation)
+        # set DataSource navigation link to an external API (with OAPI alike json respnse for DataSource({db_hex_id}))
+        if datasource_api_url:
+            observation['parameters']['DataSource@iot.navigationLink'] = f"{datasource_api_url}({ttn_data.db_id})"
+
         # sta.create_observation('Datastreams', ds["@iot.id"], observation)
         create_observation(sta, 'Datastreams', ds["@iot.id"], observation, replay_mode=ttn_data.is_replay)
 
