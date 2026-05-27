@@ -3,6 +3,7 @@
 # pylint: disable=missing-docstring
 import base64
 import copy
+from dataclasses import dataclass
 import json
 import logging
 import os
@@ -39,38 +40,111 @@ def delete_if_exists(entity, **kwargs):
         logging.info("Deleted previous %s %s", entity.__name__, kwargs)
 
 
-def process_message(sta, entry_id, message):
-    ttn_msg = message['raw']
-    topic = message['src_stream']
-    timestamp = message['received_from_src']
 
-    try:
-        logging.debug("Received message %s: %s", entry_id, ttn_msg)
-        msg_obj = json.loads(ttn_msg)
-    except json.JSONDecodeError as ex:
-        # TODO: Signal somewhere
-        logging.exception("Error parsing JSON payload", ex)
-        return
+@dataclass
+class TTNData:
+    db_id: str
+    device_id: str
+    station_num: int
+    application_id: str
+    payload: bytes
+    port: int
+    received_at: str
+    src: str
+    msg_obj: dict
+    is_replay: bool
+
+    @classmethod
+    def factory_from_message(cls, entry_id, message):
+        ttn_raw = message['raw']
+        timestamp = message['received_from_src']
+
+        try:
+            logging.debug("Received message %s: %s", entry_id, ttn_raw)
+            msg_obj = json.loads(ttn_raw)
+        except json.JSONDecodeError:
+            # TODO: Signal somewhere
+            logging.exception("Need-Action: Error parsing JSON payload 'ttn_raw' (db_id='%s')", message.get('db_id', 'not-set'))
+            return
+
+        if message["src"] == "ttn.v3":
+            return cls(
+                db_id=message["db_id"],
+                device_id=msg_obj["end_device_ids"]["device_id"],
+                station_num=int(msg_obj["end_device_ids"]["dev_eui"], 16),
+                application_id=msg_obj["end_device_ids"]["application_ids"]["application_id"],
+                payload=base64.b64decode(msg_obj["uplink_message"]["frm_payload"]),
+                port=msg_obj["uplink_message"]["f_port"],
+                received_at=msg_obj["received_at"],
+                src=message["src"],
+                msg_obj=msg_obj,
+                is_replay=bool(message.get('is_replay', False))
+            )
+        elif message["src"] == "ttn.v2":
+            try:
+                received_at=msg_obj["received_at"],
+            except KeyError:
+                logging.debug("Missing received_at in TTN v2 message, using message received timestamp instead, msg_obj: %s", msg_obj)
+                received_at=parse_date(timestamp).isoformat() # Fix missing received_at by using the message received timestamp.
+
+            return cls(
+                db_id=message["db_id"],
+                device_id=msg_obj["dev_id"],
+                station_num=int(msg_obj["hardware_serial"], 16),
+                application_id=msg_obj["app_id"],
+                payload=base64.b64decode(msg_obj["payload_raw"]),
+                port=msg_obj["port"],
+                received_at=received_at,
+                src=message["src"],
+                msg_obj=msg_obj,
+                is_replay=bool(message.get('is_replay', False))
+
+            )
+        elif message["src"] == "ttn.v1":
+            logging.warning("Received TTN v1 message, %s", msg_obj)
+            return cls(
+                db_id=message["db_id"],
+                device_id="meetstation-" + str(int(msg_obj["dev_eui"], 16)),
+                station_num=int(msg_obj["dev_eui"], 16),
+                application_id="meet-je-stad",
+                payload=base64.b64decode(msg_obj["payload"]),
+                port=msg_obj["port"],
+                received_at=parse_date(timestamp).isoformat(), # Fix missing received_at by using the message received timestamp.
+                src=message["src"],
+                msg_obj=msg_obj,
+                is_replay=bool(message.get('is_replay', False))
+            )
+        else:
+            raise ValueError(f"Fatal: Unknown message source: {message['src']}")
+
+
+def process_message(sta, entry_id, message):
+    topic = message['src_stream']
 
     if not topic.endswith("/up"):
         logging.info("Not uplink, skipping")
         return
 
-    device_id = msg_obj["end_device_ids"]["device_id"]
-    payload = base64.b64decode(msg_obj.get('uplink_message', {}).get('frm_payload', ''))
-    port = msg_obj.get('uplink_message', {}).get("f_port", 0)
+    try:
+        ttn_data = TTNData.factory_from_message(entry_id, message)
+    except (KeyError,ValueError):
+        logging.exception("Need-Action: Failed to parse ttn_data. probably need software fix and (need-replay db_id='%s')", message.get('db_id', 'not-set'))
+        return
+
+    logging.info("Incomming message db_id: '%s', is_replay: '%s', device_id: '%s'", ttn_data.db_id, ttn_data.is_replay, ttn_data.device_id)
 
     try:
-        decode_uplink(sta, msg_obj, device_id, port, payload)
+        decode_uplink(sta, ttn_data)
     except Exception:
-        logging.error("Failed to process message from %s at %s: %s", device_id, timestamp, msg_obj)
+        logging.error("Failed to process message %s from %s at %s", ttn_data.db_id, ttn_data.device_id, ttn_data.received_at)
+        logging.debug("Message: '%s': %s", ttn_data.db_id, ttn_data.msg_obj)
         raise
 
 
-def decode_uplink(sta, msg_obj, device_id, port, payload):
-    stream = bitstring.ConstBitStream(bytes=payload)
+def decode_uplink(sta, ttn_data):
+    stream = bitstring.ConstBitStream(bytes=ttn_data.payload)
 
-    l = len(payload)
+    l = len(ttn_data.payload)
     have_supply = False
     have_battery = False
     have_firmware = False
@@ -78,7 +152,7 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
     have_pm = False
     have_extra = False
     lux_scale_bits = 0
-    if port == 10:
+    if ttn_data.port == 10:
         # Legacy packet without firmware_version, with or without supply
         # and battery
         if l == 9:
@@ -89,9 +163,9 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
             have_supply = True
             have_battery = True
         else:
-            logging.warning('Invalid packet received on port {} with length {}'.format(port, l))
+            logging.warning('Invalid packet received on port {} with length {}'.format(ttn_data.port, l))
             return
-    elif port == 11:
+    elif ttn_data.port == 11:
         # Packet without lux, with or without 1 byte battery measurement, with
         # or without 4-byte particulate matter
         have_firmware = True
@@ -106,9 +180,9 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
             have_battery = True
             have_pm = True
         else:
-            logging.warning('Invalid packet received on port {} with length {}'.format(port, l))
+            logging.warning('Invalid packet received on port {} with length {}'.format(ttn_data.port, l))
             return
-    elif port == 12:
+    elif ttn_data.port == 12:
         # Packet with 2-byte lux, with or without 1 byte battery measurement, with or
         # without 4-byte particulate matter
         have_firmware = True
@@ -124,9 +198,9 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
             have_battery = True
             have_pm = True
         else:
-            logging.warning('Invalid packet received on port {} with length {}'.format(port, l))
+            logging.warning('Invalid packet received on port {} with length {}'.format(ttn_data.port, l))
             return
-    elif port == 13:
+    elif ttn_data.port == 13:
         # Packet starting with a flag byte that indicates which of the
         # optional values are present.
         have_firmware = True
@@ -141,7 +215,8 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
         # In this packet, the lux is scaled to allow larger values
         lux_scale_bits = 2
     else:
-        logging.warning('Ignoring message with unknown port: {}'.format(port))
+        logging.warning('Ignoring message with unknown port: {}'.format(ttn_data.port))
+        logging.info("Message content: {}".format(ttn_data.msg_obj))
         return
 
     data = {}
@@ -189,20 +264,18 @@ def decode_uplink(sta, msg_obj, device_id, port, payload):
         data["extra"] = []
 
     if data["extra"]:
-        process_extra(device_id, data, msg_obj)
+        process_extra(ttn_data, data)
 
-    # TODO: Maybe only check when framecount lowered or a new session
-    # was started?
-    check_metadata = True
 
-    thing = get_or_create_thing(sta, msg_obj, data, check_metadata)
+    thing,observation_data_map = get_or_create_thing(sta, ttn_data, data)
 
     logging.debug("Found: %s", thing)
 
-    create_observations(sta, thing, msg_obj, data, device_id)
+    create_observations(sta, thing, ttn_data, data, observation_data_map)
 
 
-def process_extra(device_id, data, msg_obj):
+
+def process_extra(ttn_data, data):
     # keep original for whatever reason
     extra = list(data.get("extra", []))
     firmware = data.get("firmware_version", None)
@@ -274,42 +347,68 @@ def process_extra(device_id, data, msg_obj):
 
     elif firmware == 255:
         logging.debug("Extra firmware: %s (lookup_extra.parse_extra): %s", firmware, extra)
-        lookup_extra.parse_extra(msg_obj, data)
+        lookup_extra.parse_extra(ttn_data, data)
     elif extra:
-        logging.warning("%s: extra fields not parsed, unknown firmware: %s, extra %s", device_id, firmware, extra)
+        logging.warning("%s: extra fields not parsed, unknown firmware: %s, extra %s", ttn_data.device_id, firmware, extra)
 
 
-def create_observations(sta, thing, msg_obj, data, device_id):
-    time = parse_date(msg_obj["received_at"])
 
-    # lookup: map ObservedProperty/name to data dict_key
-    lookup = {
-        "Temperature": "temperature",
-        "Humidity": "humidity",
-        "Particulate matter PM1 density": "pm1",
-        "Particulate matter PM2.5 density": "pm2_5",
-        "Particulate matter PM4 density": "pm4",
-        "Particulate matter PM10 density": "pm10",
-        "Particulate matter PM1 count": "pn1",
-        "Particulate matter PM2.5 count": "pn2_5",
-        "Particulate matter PM4 count": "pn4",
-        "Particulate matter PM10 count": "pn10",
-        "Particulate matter typical particle size": "tps",
-        "Illuminance": "lux",
-        "Battery voltage": "battery",
-        "Supply voltage": "supply",
-        "Solar voltage": "vsolar",
-        "Soil moisture on 10cm depth": "soil_d10_moist",
-        "Soil moisture on 40cm depth": "soil_d40_moist",
-        "Soil temperature on 10cm depth": "soil_d10_temp",
-        "Soil temperature on 40cm depth": "soil_d40_temp",
-    }
+def resolve_dict_value(dict_p:dict, path:tuple) -> any:
+    """resolve value from nested dicts by path defined as list/tuple.
+
+        example:
+        resolve_dict_value({'a':{'b':'c'}}, ('a','b')) # returns 'c'
+    """
+    for key in path:
+        try:
+            dict_p = dict_p[key]
+        except KeyError as exc:
+            raise KeyError(f"Key {key} not found in dict at path {path}") from exc
+
+    return dict_p
+
+def create_observations(sta, thing, ttn_data, data, observation_data_map):
+    time = parse_date(ttn_data.received_at)
+
+    logging.info("DEBUG: observation_data_map: %s", observation_data_map)
+    logging.info("DEBUG: data.keys(): %s", data.keys())
+    # observation_data_map: map ObservedProperty/name to data dict_key
+    #     observation_data_map = {
+    #         "Temperature": "temperature",
+    #         "Humidity": "humidity",
+    #         "Particulate matter PM1 density": "pm1",
+    #         "Particulate matter PM2.5 density": "pm2_5",
+    #         "Particulate matter PM4 density": "pm4",
+    #         "Particulate matter PM10 density": "pm10",
+    #         "Particulate matter PM1 count": "pn1",
+    #         "Particulate matter PM2.5 count": "pn2_5",
+    #         "Particulate matter PM4 count": "pn4",
+    #         "Particulate matter PM10 count": "pn10",
+    #         "Particulate matter typical particle size": "tps",
+    #         "Illuminance": "lux",
+    #         "Battery voltage": "battery",
+    #         "Supply voltage": "supply",
+    #         "Solar voltage": "vsolar",
+    #         "Soil moisture on 10cm depth": "soil_moist_d10",
+    #         "Soil moisture on 40cm depth": "soil_moist_d40",
+    #         "Soil temperature on 10cm depth": "soil_temp_d10",
+    #         "Soil temperature on 40cm depth": "soil_temp_d40",
+    #     }
 
     for ds in thing["MultiDatastreams"]:
         values = []
         for prop in ds["ObservedProperties"]:
-            data_name = lookup[prop["name"]]
-            values.append(data[data_name])
+            data_name = observation_data_map[prop["name"]]
+
+            try:
+                # values.append(data[data_name])
+                values.append(resolve_dict_value(data, data_name))
+
+                logging.info("MultiDatastream: %s / %s for %s", prop["name"], data_name, ttn_data.device_id)
+            except KeyError:
+                logging.warning("TODO: Missing data for multidatastream: %s / %s for device_id: %s", prop["name"], data_name, ttn_data.device_id)
+                continue
+
 
         observation = {
             "result": values,
@@ -321,15 +420,24 @@ def create_observations(sta, thing, msg_obj, data, device_id):
             "FeatureOfInterest": get_or_create_feature_of_interest(sta, lat=data["latitude"], lon=data["longitude"]),
         }
 
-        sta.create_observation('MultiDatastreams', ds["@iot.id"], observation)
+        sta.create_observation('MultiDatastreams', ds["@iot.id"], observation, replay_mode=ttn_data.is_replay)
 
     for ds in thing["Datastreams"]:
         prop = ds["ObservedProperty"]
-        data_name = lookup[prop["name"]]
+
         try:
-            value = data[data_name]
+            data_name = observation_data_map[prop["name"]]
         except KeyError:
-            logging.warning("Missing data for datastream: %s / %s for device_id: %s", prop["name"], data_name, device_id)
+            logging.warning("TODO: Missing data mapping for datastream: %s for device_id: %s, available data.keys: %s", prop["name"], ttn_data.device_id, data.keys())
+            continue
+
+        try:
+            # value = data[data_name]
+            value = resolve_dict_value(data, data_name)
+
+            logging.info("Datastream: %s / %s for %s", prop["name"], data_name, ttn_data.device_id)
+        except KeyError:
+            logging.warning("Missing data for datastream: %s / %s for device_id: %s", prop["name"], data_name, ttn_data.device_id)
             continue
 
         observation = {
@@ -343,7 +451,31 @@ def create_observations(sta, thing, msg_obj, data, device_id):
         }
 
         sta.create_observation('Datastreams', ds["@iot.id"], observation)
+        # sta.create_observation('Datastreams', ds["@iot.id"], observation)
+        create_observation(sta, 'Datastreams', ds["@iot.id"], observation, replay_mode=ttn_data.is_replay)
 
+def create_observation(sta, stream_type, datastream_id, observation, replay_mode=False):
+    if replay_mode:
+        objs = sta.get_objects_filtered(
+            f'/{stream_type}({datastream_id})/Observations',
+            filter=QOp(QField('resultTime'), QOperator.Eq, QField(observation['resultTime'])),
+        )
+
+        for obj in objs:
+            ## TODO: we shoud match result, FeatureOfInterest and parameters as well!
+            # # only match on 'result':
+            # if observation.get('result', None) == obj.get('result', None):
+            #     # obj.get('FeatureOfInterest', None) == observation.get('FeatureOfInterest', None) ?
+            #     logging.warning("Observation with same resultTime and result exists, not creating duplicate. %s", obj['@iot.selfLink'])
+            #     return
+
+            logging.info("Delete Observation with same resultTime %s", obj['@iot.selfLink'])
+            # DELETE, if possible(!)
+            sta.delete(url=obj['@iot.selfLink'])
+
+
+    logging.info("Creating observation for datastream_id %s: %s", datastream_id, observation)
+    sta.create_observation(stream_type, datastream_id, observation)
 
 location_foi_cache = {}
 
@@ -465,15 +597,112 @@ def get_or_create_observed_property(sta, props):
         observed_property_cache[cache_key] = result
         return result
 
+# Thing cache:
+# thing_cache[uniqe_id] = Thing, observation_data_map:dict, sess_frame_cnt:dict
+#   0: Thing (dict as in STA)
+#   1: observation_data_map: dict(Observatopn/name: data_key) # -> data[*]
+#   2: sess_frame_cnt: dict(session_id_key=frame_count)  # will update on each new msg, fails when frame_count/session_id mismatch.
 thing_cache = {}
+class InvalidCacheError(Exception):
+    pass
 
-def get_or_create_thing(sta, msg_obj, data, check_metadata):
-    unique_id = make_thing_id(msg_obj)
+def thing_is_validtime_valid(thing, timestamp):
+    valid_from, valid_to = thing['properties']['metadata']['validTime']
+    valid_from = parse_date(valid_from)
+    if (timestamp >= valid_from):
+        if (valid_to == 'now'):
+            return True
+        valid_to = parse_date(valid_to)
+        if timestamp >= valid_to:
+            raise InvalidCacheError("thing_cache: thing newer than valid_to")
+
+
+    raise InvalidCacheError("thing_cache: thing older than valid_from")
+
+def update_thing_cache(cache_key, thing, observation_data_map, session_key_id, frame_cnt, received_at):
+    # set or update thing cache:
+    NOTSET = {}
+
+    if thing_cache.get(cache_key, NOTSET) != thing:
+        # update cache
+        thing_cache[cache_key] = thing, observation_data_map, session_key_id, frame_cnt, received_at
+
+
+        # wtite json for debug
+        with open('debug_thing_cache.json', 'w', encoding='utf-8') as fp:
+            json.dump(thing_cache, fp)
+        logging.info("written debug_thing_cache.json.")
+
+def fetch_thing_cache(cache_key, session_key_id, frame_cnt, received_at):
+    thing, observation_data_map, cache_session_key_id, cache_frame_cnt, cache_received_at = thing_cache[cache_key]
+
+    if cache_session_key_id != session_key_id:
+        # session key id mismatch, this cache is from a different session!
+        raise InvalidCacheError(f"thing_cache invalid: session key id mismatch. (cache: {cache_session_key_id}, current: {session_key_id})")
+
+    if cache_frame_cnt > frame_cnt:
+        raise InvalidCacheError(f"thing_cache invalid: frame counts invalid. (cache: {cache_frame_cnt}, current: {frame_cnt})")
+
+    if cache_received_at > received_at:
+        raise InvalidCacheError(f"thing_cache invalid: cache received_at is in the future. (cache: {cache_received_at}, current: {received_at})")
+
+    thing_is_validtime_valid(thing, parse_date(received_at))
+
+    return thing, observation_data_map
+
+def get_or_create_thing(sta, ttn_data, data):
+    """ Get or create a Thing for the given message. Returns (Thing, observation_data_map).
+        get Thing from cache, if not found or invalid, try to get from STA, if not found or metadata changed, create new Thing.
+
+        TODO: Cache add check for ttn_data.received_at
+        TODO: session_id and frame_count , if session_id is missing
+        TODO: metada check if data.keys (maybe not need session_id and frame_count if we check data.keys() )
+        TODO: callbacks?
+
+        observation_data_map is a dict mapping ObservedProperty name to the key in the data dict where the value can be found in te data dict.
+    """
+    msg_obj = ttn_data.msg_obj
+
+    # ttn v3:
+    if "uplink_message" in msg_obj:
+        session_key_id = msg_obj['uplink_message'].get('session_key_id', 'NO_SESSION_KEY_ID')
+        frame_count = msg_obj['uplink_message'].get('f_cnt', 0)
+    # ttn v2:
+    else:
+        session_key_id = 'NO_SESSION_TTN_V2'
+        frame_count = msg_obj["counter"]
+
+
+    logging.info("Thing msg_obj: (msg_time: %s,session_key_id: %s,frame_count: %s)", ttn_data.received_at, session_key_id, frame_count)
+    # logging.info("Things: msg_obj: %s", msg_obj)
+
+    unique_id = make_thing_id(ttn_data)
     cache_key = unique_id
 
+    thing = None
+    observation_data_map = {}
+
+    origin = "error"
+    check_metadata = False
+
     try:
-        thing = thing_cache[cache_key]
-    except KeyError:
+        # thing, observation_data_map, sess_frame_cnt = thing_cache[cache_key]
+        thing, observation_data_map = fetch_thing_cache(cache_key, session_key_id, frame_count, ttn_data.received_at)
+        origin = "cache"
+        logging.debug("thing_cache[] succes (%s)", cache_key)
+
+    except (KeyError, InvalidCacheError) as e:
+        thing = None
+        if isinstance(e, InvalidCacheError):
+            # remove this one from cache
+            del(thing_cache[cache_key])
+
+        logging.info("thing_cache[] failed (%s): %s", cache_key, repr(e))
+
+        #
+        # try to fetch Thing from SensorThingsApi
+        #
+        check_metadata=True
         expand = (
             "MultiDatastreams,MultiDatastreams/Sensor,MultiDatastreams/ObservedProperties,"
             + "Datastreams,Datastreams/Sensor,Datastreams/ObservedProperty"
@@ -494,12 +723,14 @@ def get_or_create_thing(sta, msg_obj, data, check_metadata):
         elif len(objs) > 1:
             logging.warning(f"{unique_id}: Multiple things with same uniqueId and open validTime found, using first one")
             thing = objs[0]
+            origin = "sta+"
         else:
             thing = objs[0]
+            origin = "sta"
 
     new_thing = None
     if thing is None or check_metadata:
-        new_thing = describe_thing(sta, unique_id, msg_obj, data)
+        new_thing, observation_data_map = describe_thing(sta, unique_id, ttn_data, data)
 
     if thing is None:
         logging.info(f"{unique_id}: No Thing found")
@@ -516,15 +747,25 @@ def get_or_create_thing(sta, msg_obj, data, check_metadata):
     if new_thing:
         new_path = sta.create_thing(new_thing)
         created = sta.get(path=new_path, params={"$expand": expand}).json()
+        origin = "new"
         logging.info(f"{unique_id}: Created new Thing({created['@iot.id']})")
         # Update validTime en on old thing
         if thing:
             new_properties = copy.deepcopy(thing["properties"])
             new_properties["metadata"]["validTime"][1] = new_thing["properties"]["metadata"]["validTime"][0]
             sta.patch_thing(thing["@iot.id"], {"properties": new_properties})
-        return created
 
-    return thing
+            thing = created # thing is now the newly created one.
+        # update for cache validation check:  session_key_id=frame_count
+        update_thing_cache(cache_key, created, observation_data_map, session_key_id, frame_count, ttn_data.received_at)
+        logging.info("get_or_create_thing():cache_key=%s, origin=%s", cache_key,  origin)
+        return created, observation_data_map
+
+    # update for cache validation check:  session_key_id=frame_count
+    update_thing_cache(cache_key, thing, observation_data_map, session_key_id, frame_count, ttn_data.received_at)
+    logging.info("get_or_create_thing():cache_key=%s, origin=%s", cache_key,  origin)
+    return thing, observation_data_map
+
 
 
 def thing_changed(old, new):
@@ -537,13 +778,19 @@ def thing_changed(old, new):
     )
 
 
-def describe_thing(sta, unique_id, msg_obj, data):
-    """ Generate metadata for a thing based on a decoded data message. """
+def describe_thing(sta, unique_id, ttn_data, data):
+    """ Generate metadata for a thing based on a decoded data message.
+        return: Thing, observation_data_map
+    """
+    observation_data_map={}
+    msg_obj = ttn_data.msg_obj
 
-    name = msg_obj["end_device_ids"]["device_id"]
+    # name = msg_obj["end_device_ids"]["device_id"]
+    name = ttn_data.device_id
     desc = ""
-    valid_from = parse_date(msg_obj["received_at"])
-    station_num = int(msg_obj["end_device_ids"]["dev_eui"], 16)
+    valid_from = parse_date(ttn_data.received_at)
+    # station_num = int(msg_obj["end_device_ids"]["dev_eui"], 16)
+    station_num = ttn_data.station_num
 
     metadata = {
         "type": "PhysicalSystem",
@@ -560,15 +807,16 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 "label": "Manufacturer Name",
                 "value": "Meet je stad"
             },
-        ],
-        "characteristics": [
+        ]
+    }
+    if "firmware_version" in data:
+        metadata["characteristics"] = [
             {
                 "definition": "http://sensorml.com/ont/swe/property/FirmwareVersion",
                 "label": "Firmware version",
                 "value": data['firmware_version'],
             },
-        ],
-    }
+        ]
 
     is_mjs2020 = False
     if station_num > 0 and station_num < 2000:
@@ -636,6 +884,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
             "description": "Temperature"
         }),
     })
+    observation_data_map["Temperature"]=("temperature",)
 
     datastreams.append({
         "name": "Si7021 humidity",
@@ -653,6 +902,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
             "description": "Humidity"
         }),
     })
+    observation_data_map["Humidity"]=("humidity",)
 
     pm_sensor = {
         "name": "Particulate matter sensor",
@@ -714,12 +964,16 @@ def describe_thing(sta, unique_id, msg_obj, data):
 
     if "pm1" in data:
         datastreams.append(datastream_pm_density(1))
+        observation_data_map["Particulate matter PM1 density"]=("pm1",)
     if "pm2_5" in data:
         datastreams.append(datastream_pm_density(2.5))
+        observation_data_map["Particulate matter PM2.5 density"]=("pm2_5",)
     if "pm4" in data:
         datastreams.append(datastream_pm_density(4))
+        observation_data_map["Particulate matter PM4 density"]=("pm4",)
     if "pm10" in data:
         datastreams.append(datastream_pm_density(10))
+        observation_data_map["Particulate matter PM10 density"]=("pm10",)
 
     def datastream_pm_count(size):
         return {
@@ -744,13 +998,16 @@ def describe_thing(sta, unique_id, msg_obj, data):
 
     if "pn1" in data:
         datastreams.append(datastream_pm_count(1))
+        observation_data_map["Particulate matter PM1 count"]=("pn1",)
     if "pn2_5" in data:
         datastreams.append(datastream_pm_count(2.5))
+        observation_data_map["Particulate matter PM2.5 count"]=("pn2_5",)
     if "pn4" in data:
         datastreams.append(datastream_pm_count(4))
+        observation_data_map["Particulate matter PM4 count"]=("pn4",)
     if "pn10" in data:
         datastreams.append(datastream_pm_count(10))
-
+        observation_data_map["Particulate matter PM10 count"]=("pn10",)
     if "tps" in data:
         datastreams.append({
             "name": "Particulate matter typical particle size",
@@ -768,6 +1025,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 "description": "Particulate matter typical particle size in ambient air"
             }),
         })
+        observation_data_map["Particulate matter typical particle size"]=("tps",)
 
     # lux - illuminance:
     # https://meetjestad.net/en/Experiment_-_Light_sensor_comparison_at_Geophysics_Institute_Bergen
@@ -821,6 +1079,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 "description": "Luminous Flux per Area"
             }),
         })
+        observation_data_map["Illuminance"]=("lux",)
 
     mjs_arduino = {
         "name": "Internal ADC",
@@ -849,6 +1108,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 },
             ),
         })
+        observation_data_map["Battery voltage"]=("battery",)
 
     if "supply" in data:
         datastreams.append({
@@ -870,6 +1130,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 },
             ),
         })
+        observation_data_map["Supply voltage"]=("supply",)
 
     if "vsolar" in data:
         datastreams.append({
@@ -891,6 +1152,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
                 },
             ),
         })
+        observation_data_map["Solar voltage"]=("vsolar",)
 
     def soil_temp_sensor(station_name, calib_chars, depth):
         sensor = {
@@ -1169,6 +1431,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
             observation_data_map[ ds['name'] ] = ("roof_soil_moist", 'value')
             datastreams.append(ds)
     # TODO: end greenroof
+
     # TODO: location
 
     # TODO: Reuse existing Sensor objects if possible?
@@ -1183,7 +1446,7 @@ def describe_thing(sta, unique_id, msg_obj, data):
 
     # TODO: Update location when it changes?
 
-    return {
+    thing = {
         "name": name,
         "description": desc,
         "properties": {
@@ -1195,6 +1458,8 @@ def describe_thing(sta, unique_id, msg_obj, data):
             get_or_create_location(sta, lat=data["latitude"], lon=data["longitude"])
         ],
     }
+    return thing, observation_data_map
+
 def get_or_create_sensor(sta, sensor, _sensor_cache={}):
     key = make_sensor_cache_key(sensor)
     # unique keys: name, description, [uniqueId] (TODO ? metadata = not possible with properties[n]{key:.., value:.., })
@@ -1236,10 +1501,8 @@ def get_or_create_sensor(sta, sensor, _sensor_cache={}):
             _sensor_cache[key] = {"@iot.id": obj["@iot.id"]}
 
 
-def make_thing_id(msg_obj):
-    return "urn:fdc:meetjestad.nl:2024:thing/ttn/{}/{}".format(
-        msg_obj["end_device_ids"]["application_ids"]["application_id"],
-        msg_obj["end_device_ids"]["device_id"])
+
+
     logging.info("get_or_create_sensor():cache_key=%s, ref=%s, origin=%s", key, _sensor_cache[key], origin)
     return _sensor_cache[key]
 
@@ -1251,6 +1514,11 @@ def make_sensor_cache_key(sensor):
         cache_key += ';uniqueId:'+sensor.get('uniqueId')
 
     return cache_key
+
+
+def make_thing_id(ttn_data):
+    return "urn:fdc:meetjestad.nl:2024:thing/ttn/{}/{}".format(ttn_data.application_id, ttn_data.device_id)
+
 
 def make_msg_id(node_id, msg):
     return "{}/{}".format(node_id, msg["received_at"])
@@ -1315,12 +1583,15 @@ def main():
                     process_message(sta, entry_id, message)
                     redis_server.xack(stream_name, redis_consumer_group, entry_id)
                 # pylint: disable=broad-except
-                except Exception as ex:
+                except Exception:
                     # TODO: Any messages not acked linger in the stream
                     # forever. We should report these errors and have a
                     # way to reprocess pending messages after the
                     # underlying error was fixed?
-                    logging.exception("Error processing message: %s", ex)
+                    logging.exception("Error processing entry_id: %s message: %s", entry_id, message)
+                    logging.warning("Need-Action: still in redis #TODO, redis-entry='%s', db_id='%s'", entry_id, message.get('db_id', 'not-set'))
+                    # for replaying from db: we would need to know the db_id
+
 
 
 if __name__ == "__main__":
