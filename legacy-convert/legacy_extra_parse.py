@@ -10,16 +10,16 @@ MJS_NODE_METADATA_TZ   = 'Europe/Amsterdam'
 
 
 
-def parse_si7021(extra, data, node_id, timestamp):
+def parse_si7021(extra, data, node_id, timestamp, ttn_data):
     '''parse extra[] values for si7021, this case there are no extra fields. so simply pass.'''
     pass
 
-def parse_vsolar(extra, data, node_id, timestamp):
+def parse_vsolar(extra, data, node_id, timestamp, ttn_data):
     '''parse extra[] values for vsolar. (1 value in mV.)'''
     data["vsolar"] = extra.pop() / 1000
 
 
-def parse_1xpinotechsw10_1xntc10k(extra, data, node_id, timestamp):
+def parse_1xpinotechsw10_1xntc10k(extra, data, node_id, timestamp, ttn_data):
     '''parse extra[] values for 1xpinotechsw10_1xntc10k (2 values).
     "greenroof" sensor with calibration.
 
@@ -30,6 +30,7 @@ def parse_1xpinotechsw10_1xntc10k(extra, data, node_id, timestamp):
         calibration = meta_data.table_roof_calib.lookup(node_id, timestamp)
     except KeyError:
         logging.warning("Need-Action: add calibration roof for node_id '%s' on timestamp '%s'. (need-replay)", node_id, timestamp)
+        logging.warning("Need-Action: need-replay db_id='%s'", ttn_data.db_id)
         #  calibration fails
         calibration = None
 
@@ -95,6 +96,9 @@ def parse_1xpinotechsw10_1xntc10k(extra, data, node_id, timestamp):
             if cal_a is not None and cal_b is not None:
                 outcome = raw_value * cal_a + cal_b
                 logging.info(f"Calibrate: roof {node_id} {xx}: {outcome} = {raw_value} * {cal_a} + {cal_b}")
+            else:
+                logging.warning("Need-Action: fix calibration roof, '%s' invalid 'a' or 'b' value(s) for node_id '%s' on timestamp '%s'. (need-replay)", xx, node_id, timestamp)
+                logging.warning("Need-Action: need-replay db_id='%s'", ttn_data.db_id)
         # set
         results[xx] = {'raw':raw_value, 'value': outcome }
         results[xx]['calib_chars'] = calib_chars
@@ -109,7 +113,7 @@ def parse_1xpinotechsw10_1xntc10k(extra, data, node_id, timestamp):
     data["roof_soil_temp"] = results['roofT']
 
 
-def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
+def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp, ttn_data):
     '''parse extra[] values for 2xpinotechsw10_2xntc10k (4 values).
     "groundsoil" sensor with calibration.
 
@@ -124,7 +128,8 @@ def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
         soil_depths = meta_data.table_soil_depth.lookup(node_id, timestamp)
         soil_type = meta_data.table_soil_type.lookup(node_id, timestamp)
     except KeyError:
-        logging.warning("MetaDataError: No soil calibration found for node_id '%s' on timestamp '%s'.", node_id, timestamp)
+        logging.warning("Need-Action: add calibration soil for node_id '%s' on timestamp '%s'. (need-replay)", node_id, timestamp)
+        logging.warning("Need-Action: need-replay db_id='%s'", ttn_data.db_id)
         calibration=False
         soil_depths = [10,40,10,40] # default values
         # soil_depths = [None, None, None, None] # default values
@@ -194,7 +199,9 @@ def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
                 outcome = raw_value * cal_a + cal_b
                 logging.info(f"Calibrate: soil {node_id} {xx}: {outcome} = {raw_value} * {cal_a} + {cal_b}")
             else:
-                logging.warning("MetaDataError: Calibriation value missing for '%s', '%s' on '%s'.", node_id, xx, timestamp)
+                logging.warning("Need-Action: fix calibration soil, '%s' invalid 'a' or 'b' value(s) for node_id '%s' on timestamp '%s'. (need-replay)", xx, node_id, timestamp)
+                logging.warning("Need-Action: need-replay db_id='%s'", ttn_data.db_id)
+
 
         if xx[:5] == 'soilM':
             sensor = 'moist'
@@ -212,6 +219,9 @@ def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
             data_key = f"soil_{sensor}_d{soil_depths[index]}"
             data[data_key] = calcs[xx]
             logging.info(f"SOIL: now avaiable as data['{data_key}'] == {xx} for node_id '{node_id}'")
+        else:
+            logging.warning(f"Need-Action: Missing soil depth or sensor type for '{node_id}', '{xx}' on '{timestamp}'. cannot create data key.")
+            logging.warning("Need-Action: need-replay db_id='%s'", ttn_data.db_id)
 
 
     logging.debug(f"SOIL: {calcs}")
@@ -225,16 +235,16 @@ def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
 
 
 
-def parse_hc_sr04_tt(extra, data, node_id, timestamp):
+def parse_hc_sr04_tt(extra, data, node_id, timestamp, ttn_data):
     # TODO: calibrate and more
     data["todo_hc_sr04_tt"] = extra
 
-def parse_rcwl_1601(extra, data, node_id, timestamp):
+def parse_rcwl_1601(extra, data, node_id, timestamp, ttn_data):
     # TODO: calibrate and more
     data["todo_rcwl_1601"] = extra
 
 
-def parse_sensirion_sps30(extra, data, node_id, timestamp):
+def parse_sensirion_sps30(extra, data, node_id, timestamp, ttn_data):
     if extra == [0, 0, 0, 0, 0, 0, 0, 0, 0]:
         logging.info("parse_sensirion_sps30(): SPS30 ignoring data, values are all zeroes.")
         return
@@ -266,11 +276,11 @@ parsers['hc-sr04_tt'] = parse_hc_sr04_tt
 parsers['rcwl-1601'] = parse_rcwl_1601
 
 
-def parse_extra(msg_obj, data):
+def parse_extra(ttn_data, data):
     # mjs station id (from "meetstation-123"):
-    node_id = msg_obj["end_device_ids"]["device_id"].split('-')[1]
+    node_id = str(ttn_data.station_num)
     # timestamp as "YYYYMMDD HHMMSS"
-    timestamp = parse_date(msg_obj["received_at"])
+    timestamp = parse_date(ttn_data.received_at)
     timestamp = datetime.strftime(timestamp.astimezone(ZoneInfo(MJS_NODE_METADATA_TZ)), "%Y%m%d %H%M%S")
 
     # create list of sensors, in exact order of apearance in 'extra'
@@ -298,7 +308,7 @@ def parse_extra(msg_obj, data):
 
         if parse_cls:
             logging.debug(f"parse_extra: {node_id} - {parse_cls}({extra}:{extra_size}) ")
-            parse_cls(extra, data, node_id, timestamp)
+            parse_cls(extra, data, node_id, timestamp, ttn_data)
         else:
             logging.warning(f"FAILED no parser found for: {node_id} - {parse_cls}({extra}:{extra_size})")
 
