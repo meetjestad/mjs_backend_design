@@ -26,29 +26,87 @@ def parse_1xpinotechsw10_1xntc10k(extra, data, node_id, timestamp):
     value : (raw waarde * a) +b
     '''
     fields = meta_data.table_roof_format.lookup(node_id, timestamp)
-    calibration = meta_data.table_roof_calib.lookup(node_id, timestamp)
+    try:
+        calibration = meta_data.table_roof_calib.lookup(node_id, timestamp)
+    except KeyError:
+        logging.warning("Need-Action: add calibration roof for node_id '%s' on timestamp '%s'. (need-replay)", node_id, timestamp)
+        #  calibration fails
+        calibration = None
+
     results = {}
 
     # calibrate logic:
-    for xx in ['roofM1', 'roofT1']:
+    for xx in ['roofM', 'roofT']:
         # get raw value, fields knows the index of values roofM, roofT
         raw_value = extra[ int(fields[xx]) ]
         results[xx] = {'raw': raw_value}
 
-        # calibration data:
-        cal_a = calibration['values'][xx]['a']
-        cal_b = calibration['values'][xx]['b']
+        outcome = None
+        calib_chars = None
 
-        # calculate outcome
-        if cal_a is not None and cal_b is not None:
-            results[xx]['value'] = raw_value * cal_a + cal_b
-            logging.info(f"Calibrate: {node_id} {xx}: {results[xx]['value']} = {raw_value} * {cal_a} + {cal_b}")
-        else:
-            logging.warning(f"MetaDataError: Calibriation value missing for '%s', '%s' on '%s'.", node_id, xx, timestamp)
+        # calibration data:
+        if calibration:
+
+            cal_a = calibration['values'][xx]['a']
+            cal_b = calibration['values'][xx]['b']
+
+            # calibration characteristics
+            calib_chars = {"name":"calibration",
+                 "label":"Calibration parameters",
+                  "values": []}
+            # add values as name=key, value=value pairs:
+            # dress up calib_chars['values'][] = dict(name=key, value=value)
+            [calib_chars['values'].append({'name': k, 'value':v})  for k,v in calibration['values'][xx].items()]
+            if 'date' in calibration:
+                calib_chars['values'].append({'name': 'calibrationDate', 'label': 'Calibration Date', 'value': calibration['date']})
+
+            if 'comment' in calibration:
+                calib_chars['values'].append({'name': 'calibrationComment', 'label': 'Calibration Comment', 'value': calibration['comment']})
+
+            if 'name' in calibration:
+                calib_chars['values'].append({'name': 'calibrationName', 'label': 'Calibration Name', 'value': calibration['name']})
+
+                # "characteristics": [
+                #   {
+                #     "name": "calibration",
+                #     "label": "Calibration parameters",
+                #     "values": [
+                #       {
+                #         "name": "temperatureOffset",
+                #         "label": "Temperature Offset",
+                #         "value": 0.2,
+                #         "uom": "Cel"
+                #       },
+                #       {
+                #         "name": "humidityOffset",
+                #         "label": "Humidity Offset",
+                #         "value": -1.5,
+                #         "uom": "%"
+                #       },
+                #       {
+                #         "name": "calibrationDate",
+                #         "label": "Calibration Date",
+                #         "value": "2025-01-15"
+                #       }
+                #     ]
+
+
+            # calculate outcome
+            if cal_a is not None and cal_b is not None:
+                outcome = raw_value * cal_a + cal_b
+                logging.info(f"Calibrate: roof {node_id} {xx}: {outcome} = {raw_value} * {cal_a} + {cal_b}")
+        # set
+        results[xx] = {'raw':raw_value, 'value': outcome }
+        results[xx]['calib_chars'] = calib_chars
+
+    # set sensor type:
+    results['roofM']['sensor'] = 'moist'
+    results['roofT']['sensor'] = 'temp'
+
 
     # for now just add results list:
-    data["roof_soil_moist"] = results['roofM1']
-    data["roof_soil_temp"] = results['roofT1']
+    data["roof_soil_moist"] = results['roofM']
+    data["roof_soil_temp"] = results['roofT']
 
 
 def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
@@ -68,7 +126,8 @@ def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
     except KeyError:
         logging.warning("MetaDataError: No soil calibration found for node_id '%s' on timestamp '%s'.", node_id, timestamp)
         calibration=False
-        soil_depths = [None,None,None,None]
+        soil_depths = [10,40,10,40] # default values
+        # soil_depths = [None, None, None, None] # default values
         soil_type = None
 
 
@@ -80,44 +139,89 @@ def parse_2xpinotechsw10_2xntc10k(extra, data, node_id, timestamp):
         # get raw value, fields knows the index of values 'soilM1', 'soilT1', 'soilM2', 'soilT2'
         raw_value = extra[ int(fields[xx]) ]
         outcome = None
+        calib_info = None # TODO , not deeded? remove also next calib_info
+        calib_chars = None
 
         # calibration data:
         if calibration:
             cal_a = calibration['values'][xx]['a']
             cal_b = calibration['values'][xx]['b']
 
+            # calibration characteristics
+            calib_chars = {"name":"calibration",
+                 "label":"Calibration parameters",
+                  "values": []}
+            # add values as name=key, value=value pairs:
+            # dress up calib_chars['values'][] = dict(name=key, value=value)
+            [calib_chars['values'].append({'name': k, 'value':v})  for k,v in calibration['values'][xx].items()]
+            if 'date' in calibration:
+                calib_chars['values'].append({'name': 'calibrationDate', 'label': 'Calibration Date', 'value': calibration['date']})
+
+            if 'comment' in calibration:
+                calib_chars['values'].append({'name': 'calibrationComment', 'label': 'Calibration Comment', 'value': calibration['comment']})
+
+            if 'name' in calibration:
+                calib_chars['values'].append({'name': 'calibrationName', 'label': 'Calibration Name', 'value': calibration['name']})
+
+                # "characteristics": [
+                #   {
+                #     "name": "calibration",
+                #     "label": "Calibration parameters",
+                #     "values": [
+                #       {
+                #         "name": "temperatureOffset",
+                #         "label": "Temperature Offset",
+                #         "value": 0.2,
+                #         "uom": "Cel"
+                #       },
+                #       {
+                #         "name": "humidityOffset",
+                #         "label": "Humidity Offset",
+                #         "value": -1.5,
+                #         "uom": "%"
+                #       },
+                #       {
+                #         "name": "calibrationDate",
+                #         "label": "Calibration Date",
+                #         "value": "2025-01-15"
+                #       }
+                #     ]
+
+
+
             # calculate outcome
             if cal_a is not None and cal_b is not None:
                 outcome = raw_value * cal_a + cal_b
-                logging.info(f"Calibrate: {node_id} {xx}: {outcome} = {raw_value} * {cal_a} + {cal_b}")
+                logging.info(f"Calibrate: soil {node_id} {xx}: {outcome} = {raw_value} * {cal_a} + {cal_b}")
             else:
                 logging.warning("MetaDataError: Calibriation value missing for '%s', '%s' on '%s'.", node_id, xx, timestamp)
 
         if xx[:5] == 'soilM':
             sensor = 'moist'
-        else:
+        elif xx[:5] == 'soilT':
             sensor = 'temp'
+        else:
+            sensor = None
 
-        calcs[xx] = {'raw':raw_value, 'value': outcome, 'depth': soil_depths[index], 'sensor': sensor }
+        calcs[xx] = {'raw':raw_value, 'value': outcome, 'depth': soil_depths[index], 'sensor': sensor, 'calib_info': calib_info }
+        calcs[xx]['calib_chars'] = calib_chars
+        # logging.info(f"SOIL: {node_id} soil_data[{xx}]: {calcs[xx]}")
+
+        # soil_temp_d10 or soil_moist_d40 for example:
+        if sensor and soil_depths[index]:
+            data_key = f"soil_{sensor}_d{soil_depths[index]}"
+            data[data_key] = calcs[xx]
+            logging.info(f"SOIL: now avaiable as data['{data_key}'] == {xx} for node_id '{node_id}'")
 
 
     logging.debug(f"SOIL: {calcs}")
     # for now just add results list:
     data["soil_type"] = soil_type
-    data["soil_data"] = calcs
+    # data["soil_data"] = calcs #TODO remove this one
 
-    # ideas: soil_data dict vs many key+values
+    # idea: soil_data dict
     #   soil_data[{n}] {'depth':..., 'temp':..., 'moist':....,}
     #   exmaple: soil_data['soilM1'] = {'raw': 620, 'value': 24.78, 'depth': '10', 'sensor': 'moist'}
-    # of:
-    #   data[ soil_d{depth}_temp  ] = value
-    #   data[ soil_d{depth}_moist ] = value
-    #
-
-    data["soil_d10_moist"] = calcs['soilM1'].get('value', None)
-    data["soil_d10_temp"] = calcs['soilT1'].get('value', None)
-    data["soil_d40_moist"] = calcs['soilM2'].get('value', None)
-    data["soil_d40_temp"] = calcs['soilT2'].get('value', None)
 
 
 
