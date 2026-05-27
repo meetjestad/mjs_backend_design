@@ -963,7 +963,144 @@ def describe_thing(sta, unique_id, msg_obj, data):
         datastreams.append(datastream_soil_moist(10))
     if "soil_d40_moist" in data:
         datastreams.append(datastream_soil_moist(40))
+    # TODO: roof
 
+    def roof_temp_sensor(station_name, calib_chars):
+        sensor = {
+            "name": "Greenroof-soil temperature sensor",
+            "description": "2xpinotechsw10_2xntc10k",
+            "encodingType": "application/vnd.ogc.sml+json",
+            "metadata": {
+                "type": "PhysicalComponent",
+                "definition": "http://www.w3.org/ns/sosa/Sensor",
+            },
+        }
+        if calib_chars:
+            try:
+                calib_date = [n.get('value', None)  for n in calib_chars['values'] if n.get('name', None) == 'calibrationDate'][0]
+            except IndexError:
+                calib_date = None
+
+            sensor['name'] += f" with calibrations for {station_name}:{calib_date}"
+            sensor['metadata']['characteristics'] = calib_chars
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:roof-temp/{}/{}".format(station_name, calib_date)
+        else:
+            sensor['name'] += " (without calibration, raw sensor readings only)"
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:roof-temp/no-calibration"
+
+        return sensor
+
+    def datastream_roof_temp(sensor, name_postfix=''):
+        # add space before name_postfix
+        name_postfix = f' {name_postfix}' if name_postfix else ''
+
+        return {
+                "name": f"Greenroof-soil temperature{name_postfix}",
+                "description": "",
+                "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+                "unitOfMeasurement": {
+                    "name": "degree Celcius",
+                    "symbol": "°C",
+                    "definition": "ucum:Cel"
+                },
+                "Sensor": sensor,
+                "ObservedProperty": get_or_create_observed_property(
+                    sta,
+                    {
+                        "name": f"Greenroof-soil temperature{name_postfix}",
+                        "definition": f"http://qudt.org/vocab/quantitykind/Temperature#greenroof-soil",
+                        "description": f"Greenroof-soil temperature."
+                    },
+                ),
+            }
+
+    def roof_moist_sensor(station_name, calib_chars):
+        sensor = {
+            "name": "Greenroof-soil moisture sensor",
+            "description": f"2xpinotechsw10_2xntc10k",
+            "encodingType": "application/vnd.ogc.sml+json",
+            "metadata": {
+                "type": "PhysicalComponent",
+                "definition": "http://www.w3.org/ns/sosa/Sensor",
+            },
+        }
+        if calib_chars:
+            try:
+                calib_date = [n.get('value', None)  for n in calib_chars['values'] if n.get('name', None) == 'calibrationDate'][0]
+            except IndexError:
+                calib_date = None
+
+            sensor['name'] += f" with calibrations for {station_name}:{calib_date}"
+            sensor['metadata']['characteristics'] = calib_chars
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:roof-moist/{}/{}".format(station_name, calib_date)
+        else:
+            sensor['name'] += " (without calibration raw sensor readings only)"
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:roof-moist/no-calibration"
+
+        return sensor
+
+
+    def datastream_roof_moist(sensor, name_postfix=''):
+        # add space before name_postfix
+        name_postfix = f' {name_postfix}' if name_postfix else ''
+
+        return {
+                "name": f"Greenroof-soil moisture{name_postfix}",
+                "description": "",
+                "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
+                "unitOfMeasurement": {
+                    "name": "percent",
+                    "symbol": "%",
+                    "definition": "ucum:%"
+                },
+                "Sensor": sensor,
+                "ObservedProperty": get_or_create_observed_property(
+                    sta,
+                    {
+                        "name": f"Greenroof-soil moisture{name_postfix}",
+                        "definition": f"https://qudt.org/vocab/quantitykind/Moist??TODO#greenroof-soil",
+                        "description": f"Greenroof-soil moisture.",
+                    },
+                ),
+            }
+
+    # greenroof-soil data:
+    # data["roof_xxxx" = {
+    #   'raw':raw_value,
+    #   'value': outcome,
+    #   'sensor': sensor,
+    #   'calib_chars': calib_chars
+    # }
+
+    if "roof_soil_temp" in data:
+        logging.info("Found roof temp data: %s: %s", "roof_soil_temp", data["roof_soil_temp"])
+        sensor = roof_temp_sensor(name, data["roof_soil_temp"]['calib_chars'])
+        ds = datastream_roof_temp(sensor, '- raw value')
+        observation_data_map[ ds['name'] ] = ("roof_soil_temp", 'raw')
+        datastreams.append(ds)
+
+        # calibrated value:
+        if data["roof_soil_temp"].get('value', None):
+            sensor = roof_temp_sensor(name, data["roof_soil_temp"]['calib_chars'])
+            ds = datastream_roof_temp(sensor, '- calibrated value')
+            observation_data_map[ ds['name'] ] = ("roof_soil_temp", 'value')
+            datastreams.append(ds)
+
+
+    if "roof_soil_moist" in data:
+        logging.info("Found roof moist data: %s: %s", "roof_soil_moist", data["roof_soil_moist"])
+        sensor = roof_moist_sensor(name, data["roof_soil_moist"]['calib_chars'])
+        ds = datastream_roof_moist(sensor, '- raw value')
+        observation_data_map[ ds['name'] ] = ("roof_soil_moist", 'raw')
+        datastreams.append(ds)
+
+        # calibrated value:
+        if data["roof_soil_moist"].get('value', None):
+            sensor = roof_moist_sensor(name, data["roof_soil_moist"]['calib_chars'])
+            ds = datastream_roof_moist(sensor, '- calibrated value')
+            observation_data_map[ ds['name'] ] = ("roof_soil_moist", 'value')
+            datastreams.append(ds)
+    # TODO: end greenroof
     # TODO: location
 
     # TODO: Reuse existing Sensor objects if possible?
