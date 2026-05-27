@@ -892,19 +892,37 @@ def describe_thing(sta, unique_id, msg_obj, data):
             ),
         })
 
-    soil_temp_sensor = {
-        "name": "Soil temperature sensor",
-        "description": "2xpinotechsw10_2xntc10k",
-        "encodingType": "application/vnd.ogc.sml+json",
-        "metadata": {
-            "type": "PhysicalComponent",
-            "definition": "http://www.w3.org/ns/sosa/Sensor",
-        },
-    }
+    def soil_temp_sensor(station_name, calib_chars, depth):
+        sensor = {
+            "name": "Soil temperature sensor",
+            "description": "2xpinotechsw10_2xntc10k",
+            "encodingType": "application/vnd.ogc.sml+json",
+            "metadata": {
+                "type": "PhysicalComponent",
+                "definition": "http://www.w3.org/ns/sosa/Sensor",
+            },
+        }
+        if calib_chars:
+            try:
+                calib_date = [n.get('value', None)  for n in calib_chars['values'] if n.get('name', None) == 'calibrationDate'][0]
+            except IndexError:
+                calib_date = None
 
-    def datastream_soil_temp(size):
+            sensor['name'] += f" with calibrations for {station_name}:d{depth}:{calib_date}"
+            sensor['metadata']['characteristics'] = calib_chars
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:soil-temp/d{}/{}/{}".format(depth, station_name, calib_date)
+        else:
+            sensor['name'] += " (without calibration, raw sensor readings only)"
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:soil-temp/d{}/no-calibration".format(depth)
+
+        return sensor
+
+    def datastream_soil_temp(size, sensor, name_postfix=''):
+        # add space before name_postfix
+        name_postfix = f' {name_postfix}' if name_postfix else ''
+
         return {
-                "name": f"Soil temperature on {size}cm depth",
+                "name": f"Soil temperature on {size}cm depth{name_postfix}",
                 "description": "",
                 "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
                 "unitOfMeasurement": {
@@ -912,35 +930,49 @@ def describe_thing(sta, unique_id, msg_obj, data):
                     "symbol": "°C",
                     "definition": "ucum:Cel"
                 },
-                "Sensor": soil_temp_sensor,
+                "Sensor": sensor,
                 "ObservedProperty": get_or_create_observed_property(
                     sta,
                     {
-                        "name": f"Soil temperature on {size}cm depth",
+                        "name": f"Soil temperature on {size}cm depth{name_postfix}",
                         "definition": f"http://qudt.org/vocab/quantitykind/Temperature#depth={size}cm",
                         "description": f"Soil temperature on {size}cm depth."
                     },
                 ),
             }
 
-    if "soil_d10_temp" in data:
-        datastreams.append(datastream_soil_temp(10))
-    if "soil_d40_temp" in data:
-        datastreams.append(datastream_soil_temp(40))
+    def soil_moist_sensor(station_name, calib_chars, depth):
+        sensor = {
+            "name": "Soil moisture sensor",
+            "description": f"2xpinotechsw10_2xntc10k",
+            "encodingType": "application/vnd.ogc.sml+json",
+            "metadata": {
+                "type": "PhysicalComponent",
+                "definition": "http://www.w3.org/ns/sosa/Sensor",
+            },
+        }
+        if calib_chars:
+            try:
+                calib_date = [n.get('value', None)  for n in calib_chars['values'] if n.get('name', None) == 'calibrationDate'][0]
+            except IndexError:
+                calib_date = None
 
-    soil_moist_sensor = {
-        "name": "Soil moisture sensor",
-        "description": "2xpinotechsw10_2xntc10k",
-        "encodingType": "application/vnd.ogc.sml+json",
-        "metadata": {
-            "type": "PhysicalComponent",
-            "definition": "http://www.w3.org/ns/sosa/Sensor",
-        },
-    }
+            sensor['name'] += f" with calibrations for {station_name}:d{depth}:{calib_date}"
+            sensor['metadata']['characteristics'] = calib_chars
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:soil-moist/d{}/{}/{}".format(depth, station_name, calib_date)
+        else:
+            sensor['name'] += " (without calibration raw sensor readings only)"
+            sensor['metadata']['uniqueId'] = "urn:fdc:meetjestad.nl:2024:sensor:soil-moist/d{}/no-calibration".format(depth)
 
-    def datastream_soil_moist(size):
+        return sensor
+
+
+    def datastream_soil_moist(size, sensor, name_postfix=''):
+        # add space before name_postfix
+        name_postfix = f' {name_postfix}' if name_postfix else ''
+
         return {
-                "name": f"Soil moisture on {size}cm depth",
+                "name": f"Soil moisture on {size}cm depth{name_postfix}",
                 "description": "",
                 "observationType": "http://www.opengis.net/def/observationType/OGC-OM/2.0/OM_Measurement",
                 "unitOfMeasurement": {
@@ -948,21 +980,57 @@ def describe_thing(sta, unique_id, msg_obj, data):
                     "symbol": "%",
                     "definition": "ucum:%"
                 },
-                "Sensor": soil_moist_sensor,
+                "Sensor": sensor,
                 "ObservedProperty": get_or_create_observed_property(
                     sta,
                     {
-                        "name": f"Soil moisture on {size}cm depth",
+                        "name": f"Soil moisture on {size}cm depth{name_postfix}",
                         "definition": f"https://qudt.org/vocab/quantitykind/Moist??TODO#depth={size}cm",
                         "description": f"Soil moisture on {size}cm depth.",
                     },
                 ),
             }
 
-    if "soil_d10_moist" in data:
-        datastreams.append(datastream_soil_moist(10))
-    if "soil_d40_moist" in data:
-        datastreams.append(datastream_soil_moist(40))
+    # soil_data:
+    # data["soil_type"] = soil_type
+    # data["soil_xxx_yyy" = {
+    #   'raw':raw_value,
+    #   'value': outcome,
+    #   'depth': soil_depths[index],
+    #   'sensor': sensor,
+    #   'calib_info': calib_info,
+    #   'calib_chars': calib_chars
+    # }
+
+    for key in {k: v for k, v in data.items() if k.startswith('soil_temp_')}:
+        logging.info("Found soil temp data: %s: %s", key, data[key])
+        sensor = soil_temp_sensor(name, data[key]['calib_chars'], data[key]['depth'])
+        ds = datastream_soil_temp(data[key]['depth'], sensor, '- raw value')
+        observation_data_map[ ds['name'] ] = (key, 'raw')
+        datastreams.append(ds)
+
+        # calibrated value:
+        if data[key].get('value', None):
+            sensor = soil_temp_sensor(name, data[key]['calib_chars'], data[key]['depth'])
+            ds = datastream_soil_temp(data[key]['depth'], sensor, '- calibrated value')
+            observation_data_map[ ds['name'] ] = (key, 'value')
+            datastreams.append(ds)
+
+
+    for key in {k: v for k, v in data.items() if k.startswith('soil_moist_')}:
+        logging.info("Found soil moist data: %s: %s", key, data[key])
+        sensor = soil_moist_sensor(name, data[key]['calib_chars'], data[key]['depth'])
+        ds = datastream_soil_moist(data[key]['depth'], sensor, '- raw value')
+        observation_data_map[ ds['name'] ] = (key, 'raw')
+        datastreams.append(ds)
+
+        # calibrated value:
+        if data[key].get('value', None):
+            sensor = soil_moist_sensor(name, data[key]['calib_chars'], data[key]['depth'])
+            ds = datastream_soil_moist(data[key]['depth'], sensor, '- calibrated value')
+            observation_data_map[ ds['name'] ] = (key, 'value')
+            datastreams.append(ds)
+
     # TODO: roof
 
     def roof_temp_sensor(station_name, calib_chars):
