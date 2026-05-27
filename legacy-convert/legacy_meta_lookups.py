@@ -16,7 +16,7 @@ table_soil_format.lookup('node_id', 'timestamp'):
 
 table_roof_format.lookup('node_id', 'timestamp'):
     lookup the dict containing indexes of extra fields by sensor_value_name.
-    example: {'roofM1': '0', 'roofT1': '1'}
+    example: {'roofM': '0', 'roofT': '1'}
 
 # lookup calibration values:
 table_soil_calib.lookup('node_id', 'timestamp'):
@@ -215,7 +215,7 @@ def makeTableFormats(json_metadata):
     # 'sensor': '2xpinotechsw10_2xntc10k'
     soil_table = ImmutableLookupTable({'soilM1': '0', 'soilT1': '1', 'soilM2': '2', 'soilT2': '3'}, table_name='table_soil_format')
     # 'sensor': '1xpinotechsw10_1xntc10k'
-    roof_table = ImmutableLookupTable({'roofM1': '0', 'roofT1': '1'},table_name='table_roof_format')
+    roof_table = ImmutableLookupTable({'roofM': '0', 'roofT': '1'},table_name='table_roof_format')
 
     for node in json_metadata.get('nodes'):
         node_id = node.get('id', None)
@@ -269,7 +269,8 @@ def makeTableCalibrations(json_metadata):
         return value
 
     # 'sensor': '2xpinotechsw10_2xntc10k'
-    soil_table = ImmutableLookupTable(table_name='table_soil_calib')
+    soil_default = {'comment': 'no actual measurement, copied from station 2126 dd 30-12-2024', 'name': 'default', 'date': '20221127', 'values': {'soilM1': {'a': 0.049, 'bsen': 15.0, 'b': -5.1, 'alpha': 0.0, 'beta': 0.02, 'gamma': 0.02}, 'soilT1': {'a': 0.25, 'b': -20.0}, 'soilM2': {'a': 0.049, 'bsen': 7.9, 'b': -4.7, 'alpha': 0.0, 'beta': 0.02, 'gamma': 0.02}, 'soilT2': {'a': 0.25, 'b': -20.0}}}
+    soil_table = ImmutableLookupTable(table_name='table_soil_calib', default=soil_default)
     # 'sensor': '1xpinotechsw10_1xntc10k'
     roof_table = ImmutableLookupTable(table_name='table_roof_calib')
 
@@ -284,15 +285,22 @@ def makeTableCalibrations(json_metadata):
         for field_order in formats:
             # get timestamp and data
             timestamp = field_order.get('date', "")
-            # remove date from field_order:
-            if 'date' in field_order:
-                del(field_order['date'])
+            # # remove date from field_order:
+            # if 'date' in field_order:
+            #     del(field_order['date'])
             data = field_order
 
             # store it as tuple.
             sensor = data.get('sensor', None)
             if 'sensor' in data:
                 del(data['sensor'])
+
+            if 'comment' in data and data['comment'] == '':
+                del(data['comment'])
+                logging.debug("removed empty comment in calibration for node %s, timestamp %s", node_id, timestamp)
+            if 'name' in data and data['name'] == '':
+                del(data['name'])
+                logging.debug("removed empty name in calibration for node %s, timestamp %s", node_id, timestamp)
 
             # FIX calibrations.values str/comma into float/None
 
@@ -306,11 +314,17 @@ def makeTableCalibrations(json_metadata):
             if sensor == '2xpinotechsw10_2xntc10k':
                 soil_table.add(node_id, timestamp, data)
             elif sensor == '1xpinotechsw10_1xntc10k':
-                # FIX calibrations.values roofM1 <- roofM
+                # FIX calibrations.values roofM1 -> roofM
                 if data.get('values', {}).get('roofM', False):
-                    # merge roofM into roofM1
-                    data['values']['roofM1'] = data['values']['roofM'] | data['values']['roofM1']
-                    del(data['values']['roofM'])
+                    # merge roofM1 into roofM
+                    data['values']['roofM'] = data['values']['roofM1'] | data['values'].get('roofM', {})
+                    del(data['values']['roofM1'])
+
+                # FIX calibrations.values roofT1 -> roofT
+                if data.get('values', {}).get('roofT1', False):
+                    # merge roofT1 into roofT
+                    data['values']['roofT'] = data['values']['roofT1'] | data['values'].get('roofT', {})
+                    del(data['values']['roofT1'])
 
                 roof_table.add(node_id, timestamp, data)
             else:
