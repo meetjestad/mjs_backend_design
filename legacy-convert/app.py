@@ -17,6 +17,9 @@ import deepdiff
 import redis
 from iso8601 import parse_date
 
+# make sure logging is enabled to see import logs messages:
+logging.basicConfig(level=logging.INFO, force=True)
+
 import sensorthings
 from sensorthings import QOperator, QOp, QLiteral, QField
 
@@ -1547,8 +1550,6 @@ def main():
         sys.exit(0)
     signal.signal(signal.SIGTERM, terminate)
     signal.signal(signal.SIGINT, terminate)
-
-    logging.basicConfig(level=logging.INFO, force=True)
 
     logging.info(
         "Connecting Redis to {} on port {}".format(redis_url.hostname, redis_url.port)
