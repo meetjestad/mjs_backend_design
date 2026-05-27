@@ -26,17 +26,19 @@ class RawMessage(typing.NamedTuple):
 
     @classmethod
     def calc_hash(cls, message: str) -> int:
+        """Calculate a *unique* hash for the given message string, used as primary key in the database."""
         hash = hashlib.sha256(message.strip().encode())
         # Truncate to 16 bytes and convert to an integer to fit UHUGEINT type.
         # This saves significant space in the database.
         return int.from_bytes(hash.digest()[:16], byteorder='big', signed=False)
 
     @property
-    def hex_hash(self):
+    def hex_hash(self) -> str:
+        """hex representation of the hash"""
         return self.hash.to_bytes(length=16, byteorder='big', signed=False).hex()
 
 
-def init(database_path):
+def init(database_path: str) -> duckdb.DuckDBPyConnection:
     con = duckdb.connect(database_path, config={'storage_compatibility_version': 'latest'})
 
     con.execute("""
@@ -51,5 +53,5 @@ def init(database_path):
     return con
 
 
-def shutdown(con):
+def shutdown(con: duckdb.DuckDBPyConnection):
     con.close()
