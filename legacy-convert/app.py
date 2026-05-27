@@ -967,11 +967,14 @@ def describe_thing(sta, unique_id, msg_obj, data):
     # TODO: location
 
     # TODO: Reuse existing Sensor objects if possible?
-
     for ds in datastreams:
-        if "metadata" in ds.get("Sensor", {}):
-            ds["Sensor"]["metadata"]["label"] = ds["Sensor"]["description"]
-            ds["Sensor"]["metadata"]["uniqueId"] = f"urn:uuid:{uuid.uuid4()}"
+        ds['Sensor'] = get_or_create_sensor(sta, ds['Sensor'])
+
+
+    # for ds in datastreams:
+    #     if "metadata" in ds.get("Sensor", {}):
+    #         ds["Sensor"]["metadata"]["label"] = ds["Sensor"]["description"]
+    #         ds["Sensor"]["metadata"]["uniqueId"] = f"urn:uuid:{uuid.uuid4()}"
 
     # TODO: Update location when it changes?
 
@@ -987,13 +990,62 @@ def describe_thing(sta, unique_id, msg_obj, data):
             get_or_create_location(sta, lat=data["latitude"], lon=data["longitude"])
         ],
     }
+def get_or_create_sensor(sta, sensor, _sensor_cache={}):
+    key = make_sensor_cache_key(sensor)
+    # unique keys: name, description, [uniqueId] (TODO ? metadata = not possible with properties[n]{key:.., value:.., })
+    origin="cache"
+
+    if "@iot.id" in sensor:
+        origin="already"
+    elif key not in _sensor_cache:
+        # lookup in STA:
+        objs = sta.get_objects_filtered(
+            "/Sensors",
+            filter=QOp(QField('name'), QOperator.Eq, QLiteral(sensor["name"])),
+        )
+
+        if not objs:
+            origin="new"
+            # add missing sensor fields:
+            if "metadata" not in sensor:
+                sensor['metadata'] = {}
+            if "label" not in sensor["metadata"]:
+                sensor["metadata"]["label"] = sensor["description"]
+            if "uniqueId" not in sensor["metadata"]:
+                sensor["metadata"]["uniqueId"] = f"urn:uuid:{uuid.uuid4()}"
+
+            # Create Sensor and safe reference:
+            # _sensor_cache[key] = sensor ref
+            # make Sensor ref dict {"@iot.id": id} out of new_path '/Sensor(123)'
+            new_path = sta.create_object("/Sensors", content=sensor, content_type="application/json")
+            _sensor_cache[key] = {"@iot.id": new_path[new_path.index('(')+1:-1]}
+
+        elif len(objs) > 1:
+            logging.warning(f"{sensor['name']}: Multiple {new_path[1:]} with same name, using first one")
+            origin="sta+"
+            obj = objs[0]
+            _sensor_cache[key] = {"@iot.id": obj["@iot.id"]}
+        else:
+            origin="sta"
+            obj = objs[0]
+            _sensor_cache[key] = {"@iot.id": obj["@iot.id"]}
 
 
 def make_thing_id(msg_obj):
     return "urn:fdc:meetjestad.nl:2024:thing/ttn/{}/{}".format(
         msg_obj["end_device_ids"]["application_ids"]["application_id"],
         msg_obj["end_device_ids"]["device_id"])
+    logging.info("get_or_create_sensor():cache_key=%s, ref=%s, origin=%s", key, _sensor_cache[key], origin)
+    return _sensor_cache[key]
 
+def make_sensor_cache_key(sensor):
+    cache_key = 'name:'+sensor.get("name")
+    if 'description' in sensor:
+        cache_key += ';description:'+sensor.get("description")
+    if 'uniqueId' in sensor:
+        cache_key += ';uniqueId:'+sensor.get('uniqueId')
+
+    return cache_key
 
 def make_msg_id(node_id, msg):
     return "{}/{}".format(node_id, msg["received_at"])
