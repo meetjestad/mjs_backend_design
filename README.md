@@ -53,6 +53,27 @@ To view logs of various containers:
 	docker compose logs -f frost-web
 	docker compose logs -f frost-db
 
+Database indices
+----------------
+For some queries, database indices can be used to speed them up considerably.
+Ideally these would stored in a file somewhere and automatically
+added/migrated, but for now you can add them manually.
+
+
+For faster retrieval of observations of a specific datastream in a certain
+timeframe (taken from https://fraunhoferiosb.github.io/FROST-Server/deployment/db_performance.html):
+
+    docker compose exec frost-db psql -U frost frost --command '
+        create index concurrently "OBS_DS_ID_PHTIME_SE_O_ID" on "OBSERVATIONS"
+        using btree ("DATASTREAM_ID", "PHENOMENON_TIME_START" asc, "PHENOMENON_TIME_END" asc, "ID" asc)
+        where ("DATASTREAM_ID" is not null);'
+
+And for quickly seeing just the latest observations:
+
+    docker compose exec frost-db psql -U frost frost --command '
+        create index concurrently "PHTIME_SE_O_ID" on "OBSERVATIONS"
+        using btree ("PHENOMENON_TIME_START" asc, "PHENOMENON_TIME_END" asc, "ID" asc)
+
 Accessing the API
 -----------------
 When started as above, the SensorThigns API is accessible below:
