@@ -146,7 +146,6 @@ class LookupTable:
     def export(self):
         print(f"{self.table_name} = {type(self).__name__}(default={self.default})")
         for node_id,table in self.table.items():
-            previous = [None, None]
             for timestamp, data in table.items():
                 # print(dict(node_id=node_id, timestamp=timestamp, data=data))
                 print(f"{self.table_name}.add('{node_id}', '{timestamp}', {data})")

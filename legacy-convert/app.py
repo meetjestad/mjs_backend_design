@@ -799,13 +799,10 @@ def describe_thing(sta, unique_id, ttn_data, data):
         return: Thing, observation_data_map
     """
     observation_data_map={}
-    msg_obj = ttn_data.msg_obj
 
-    # name = msg_obj["end_device_ids"]["device_id"]
     name = ttn_data.device_id
     desc = ""
     valid_from = parse_date(ttn_data.received_at)
-    # station_num = int(msg_obj["end_device_ids"]["dev_eui"], 16)
     station_num = ttn_data.station_num
 
     metadata = {
@@ -834,7 +831,6 @@ def describe_thing(sta, unique_id, ttn_data, data):
             },
         ]
 
-    is_mjs2020 = False
     if station_num > 0 and station_num < 2000:
         model = "MJS2016"
     elif station_num > 2000 and station_num < 3000:
@@ -1222,7 +1218,7 @@ def describe_thing(sta, unique_id, ttn_data, data):
     def soil_moist_sensor(station_name, calib_chars, depth):
         sensor = {
             "name": "Soil moisture sensor",
-            "description": f"2xpinotechsw10_2xntc10k",
+            "description": "2xpinotechsw10_2xntc10k",
             "encodingType": "application/vnd.ogc.sml+json",
             "metadata": {
                 "type": "PhysicalComponent",
@@ -1263,7 +1259,7 @@ def describe_thing(sta, unique_id, ttn_data, data):
                     sta,
                     {
                         "name": f"Soil moisture on {size}cm depth{name_postfix}",
-                        "definition": f"https://qudt.org/vocab/quantitykind/Moist??TODO#depth={size}cm",
+                        "definition": f"todo! <url>#depth={size}cm", #TODO: https://www.qudt.org/doc/DOC_VOCAB-QUANTITY-KINDS.html ?
                         "description": f"Soil moisture on {size}cm depth.",
                     },
                 ),
@@ -1354,8 +1350,8 @@ def describe_thing(sta, unique_id, ttn_data, data):
                     sta,
                     {
                         "name": f"Greenroof-soil temperature{name_postfix}",
-                        "definition": f"http://qudt.org/vocab/quantitykind/Temperature#greenroof-soil",
-                        "description": f"Greenroof-soil temperature."
+                        "definition": "http://qudt.org/vocab/quantitykind/Temperature#greenroof-soil",
+                        "description": "Greenroof-soil temperature."
                     },
                 ),
             }
@@ -1363,7 +1359,7 @@ def describe_thing(sta, unique_id, ttn_data, data):
     def roof_moist_sensor(station_name, calib_chars):
         sensor = {
             "name": "Greenroof-soil moisture sensor",
-            "description": f"2xpinotechsw10_2xntc10k",
+            "description": "2xpinotechsw10_2xntc10k",
             "encodingType": "application/vnd.ogc.sml+json",
             "metadata": {
                 "type": "PhysicalComponent",
@@ -1404,8 +1400,8 @@ def describe_thing(sta, unique_id, ttn_data, data):
                     sta,
                     {
                         "name": f"Greenroof-soil moisture{name_postfix}",
-                        "definition": f"https://qudt.org/vocab/quantitykind/Moist??TODO#greenroof-soil",
-                        "description": f"Greenroof-soil moisture.",
+                        "definition": "todo!", #TODO: https://www.qudt.org/doc/DOC_VOCAB-QUANTITY-KINDS.html ?
+                        "description": "Greenroof-soil moisture.",
                     },
                 ),
             }
